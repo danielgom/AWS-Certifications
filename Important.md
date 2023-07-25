@@ -22,6 +22,52 @@ ___Never enter your IAM keys (access keys) into an EC2 instance, instead use IAM
 ___EC2 stands for Elascitc Cloud Compute___
 
 
+## AWS Availability Zones
+- Minimum 3, max 6 per region.
+
+
+# ~~~~ AWS IAM Identity and Access Management Global ~~~~
+
+Creating an account creates a root account, which shouldn't be used, we should create users instead.
+
+* Users can be created and can be grouped
+* Groups only contain users not other groups
+* Users can belong to multiple groups
+
+A Policy is a JSON document and this can define permissions, these permissions which are in the JSON document can be assigned to users and groups. **Least privileged principle -> Do not give a user more permissions than it needs**
+
+### MFA Multiple Factor Authentication
+
+MFA = password you know + security device you own
+
+Options (Must know)
+* Virtual MFA device
+    - Google Authenticator
+    - Authy
+* Universal 2nd Factor (U2F) Security Key
+    - YubiKey Yubico (3rd Party)
+* Harware Key Fob MFA Device
+    - Provided by Gemalto (3rd Party)
+* Hardware Key Fob MFA Device for AWS GovCloud (US)
+    - Provided by SurePassID (3rd Party)
+
+### IAM Roles for services
+Roles are for a short period of time and are intended to be used by some AWS services that will need for perform actions on your behalf.
+
+Common role services
+* EC2
+* Lambdas
+
+### IAM Security Tools
+
+**IAM Credentials Report (account-level)**\
+A report that lists all your account's users and the status of their various credentials.
+
+**IAM Access Advisor (user-level)**\
+Shows the service permissions granted to a user and when those services were last accessed.
+
+
+
 # EC2 INSTANCE TYPES
 
 * General Purpose
