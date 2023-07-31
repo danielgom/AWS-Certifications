@@ -606,6 +606,129 @@ Good metrics to scale on.
 * Any custom metric
 
 
+# ~~~~ AWS RDS ~~~~
+
+RDS is a managed service:
+* Automated provisioning, OS patching
+* Continuous backups and restore to specific timestamp (Point in time restore)
+* Read replicas for improved read performance
+* Multi AZ setup for DR (Distaster recovery)
+* Maintenance windows for updates
+* Scaling capability (vertical and horizontal)
+* Store backed by EBS (gp2 or io1)
+* Cannot ssh into instances
+
+**RDS storage auto scaling**
+
+* Helps to increase storage on RDS DB instance dynamically
+* When RDS detects you are running out of storage it scales automatically
+* Avoid manually scaling database
+* You have to set maximum storage threshold (Maximum limit for DB storage)
+* Automatically modify storage if: 
+    * Free storage is less than 10% allocated
+    * Low-storage at least 5 minutes
+    * 6 hours have passed since last modification
+* Useful for applications with unpredictable workload
+* Supports all RDS database engines (Maria DB, MySQL, PostgreSQL, SQL Server, Oracle)
+
+**RDS Read replicas for read scalability**
+
+* Can scale up to 15 read replicas
+* Within AZ, Cross AZ, or Cross region
+* Replication is ASYNC so reads are eventually consistent
+* Replicas can be promoted to their own DB
+* Applications must update the connection string to leverage read replicas
+* Read replicas are used for select statements
+
+There is a replication fee if read reaplicas are in a different region, for example us-east-1a -> eu-west-1b , this replication will have a cost, whereas replication in the same region is free, for example us-east-1a -> us-west-1a
+
+**RDS Multi AZ (Distaster recovery)**
+
+* SYNC replication
+* Increate availability
+* Failover in case of loss of AZ, loss of network, instance or storage failure
+* No manual intervention in apps
+* Not used for scaling
+* Used for failure in any AZ
+
+___Read replicas can be setup as Multi AZ for distaster recovery___
+
+From single AZ to Multi AZ
+
+* Zero downtime operation (no need to stop DB)
+* Just click to modify
+* This happens internally:
+    * A snapshot is taken
+    * A new DB is restored from the snapshot in a new AZ
+    * Sync is established between the two databases
+
+**Amazon Aurora**
+* Propietary technology from AWS (not open sourced)
+* Postgres and MySQL are both supported as Aurora DB
+* Aurora is cloud optimized and claims 5x performance improvement over MySQL on RDS and 3x the performance of PostgreSQL on RDS
+* Aurora can have up to 15 replicas and the replication process is faster than MySQL
+* Failover in Aurora is instantaneous, it's HA active
+* Aurora cost more than RDS (20% more) - but is more efficient
+* 6 copies of data across 3 AZ:
+    * 4 copies out of 6 needed for writes
+    * 3 copies out of 6 needed for reads
+    * Self healing with peer-to-peer application
+    * Storage is stripped accross 100s of volumes
+* One Aurora instance takes writes (master)
+* Automated failover for master in less than 30 seconds
+* Master + up 15 Aurora read replicas
+* Support for cross region replication
+* Shared storage Auto expanding from 10 GB to 128 TB
+* Backtracking: Restore data at any point of time without using backups
+
+**RDS and Aurora security**
+* At-Rest encryption:
+    * Database master and replicas encryption using AWS KMS - must be defined at launch time
+    * If the master is not encrypted, the read replicas cannot be encrypted
+    * To encrypt an un-encrypted database, go through a DB snapshot and restore as encrypted
+* In-flight encryption:
+    * TLS-Ready by default, use the AWS TLS root certificates client-side
+* IAM authentication:
+    * Roles to connect to the db from any other AWS service
+* Security groups:
+    * Control network access to RDS / Aurora
+* No SSH available:
+    * Except on RDS custom
+* Audit logs can be enabled:
+    * Sent to Cloudwatch for longer retention
+
+___Writer endpoint, writes (master)___
+
+___Reader endpoint, reads, connection load balancer (when you have 2 or more read replicas)___
+
+**Amazon RDS proxy**
+
+Service meant to reduce the connection burden to RDS (for example when we have many connections opening and closing fast, such as many lambda functions conected to a single db)
+
+* Allow apps to pool and share DB connections established with the database
+* Serverless, autoscaling , highly available
+* Reduced RDS and Aurora failover by 66%
+* Supports all SQL databases in RDS + Aurora
+* Enforce IAM authentication for DB, securely store credentials in AWS secrets manager
+* RDS is never publicly accessible (must be accessed from VPC)
+
+**Amazon ElasticCache Overview**
+
+* Same kind of service as RDS to get manager Relational Databases
+* Elastic cache is to get managed Redis or Memcached
+* AWS takes care of maintenance / patching , optimizations, setup, configuration, monitoring, failure recover y backups
+* Using Elastic cache involves heavy application changes
+* Maximum read replicas for ElasticCache redis cluster with cluster-mode disabled, 5
+
+**Amazon MemoryDB for Redis**
+
+Is a service backed up by a Redis db, this time redis is being used as a memory DB
+
+* Redis-compatible, durable, in-memory database service
+* Ultra-fast performance, with over 160 million requests per second
+* Durable in-memory data storage with Multi AZ transactional log
+* Scale seamlessly from 10s GBs to 100s TBs of storage
+* Use cases: web and mobile apps, online gaming, data streaming
 
 ** _TCP is layer 4_.
 
