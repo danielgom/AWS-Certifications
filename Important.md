@@ -730,6 +730,418 @@ Is a service backed up by a Redis db, this time redis is being used as a memory 
 * Scale seamlessly from 10s GBs to 100s TBs of storage
 * Use cases: web and mobile apps, online gaming, data streaming
 
+# ~~~~ AWS Route 53 (DNS) ~~~~
+
+A highly available, scalable, fully managed and Authoritative DNS, Authoritative = the customer can update the DNS records
+
+* Route 53 is also a Domain Registrar
+* Ability to check the health of your resources
+* The only AWS services which provides 100% availability SLA
+* 53 is a reference to traditional DNS port
+
+**Records**
+
+How you want to route traffic for a domain
+
+Each record contains:
+* Domain/Subdomain Name - e.g. example.com
+* Record Type - e.g. A or AAAA
+* Value -  e.g. 12.34.56.78
+* Routing policy - how route 53 respond to queries
+* TTL - ammount ammount of time the record cached at DNS Resolver
+
+Route 53 support the following DNS record types:
+* (must known) A/AAAA/CNAME/NS
+* (advanced) CAA/DS/MX/NAPTR/PTR/SOA/TXT/SPF/SRV
+
+
+Recort types:
+* A - maps a hostaname to IPv4
+* AAAA - maps a hostaname to IPv6
+* CNAME - maps a hostaname to another hostname
+    * The target domain which must have an A or AAAA record
+    * Can't create a CNAME record for the top node of a DNS namespace (Zone apex)
+    * Example: cannot create example.com but can create for www.example.com
+* NS - Name servers for the Hosted Zone
+    * Control how traffic is routed for a domain
+
+
+___Alias Records___
+
+These are similar to CNAME record types:
+* Maps a hostname to an AWS resource
+* An extension of DNS functionality
+* Automatically recognized changes in the resource's IP addresses
+* Unlike CNAME, it can be used for the top node of a DNS namespace (Zone Apex) for e.g. example.com
+* Alias record is always of type A/AAAA for AWS resources (IPv4/IPv6)
+* Cannot set TTL
+* Cannot set an ALIAS for an EC2 DNS name
+
+**Hosted Zones**
+
+A container for records that define how to route traffic to a domain and its subdomains
+
+* Public -> Contains records that specify how to route trasffic on the Internet (public domain names)
+
+* Private -> Contain records that specify how you route traffic within one or more VPCs (private domain names)
+
+* Pay $0.50 per month per hosted zone
+
+* Duration minimum 1 year (13 USD)
+
+**Routing policies**
+
+Differences between Route 53 policies and ELB
+
+ELB distributes traffic among Multiple Availability Zone but not to multiple Regions. Route 53 can distribute traffic among multiple Regions. In short, ELBs are intended to load balance across EC2 instances in a single region whereas DNS load-balancing (Route53) is intended to help balance traffic across regions.
+
+Both Route 53 and ELB perform health check and route traffic to only healthy resources. Route 53 weighted routing has health checks and removes unhealthy targets from its list. However, DNS is cached so unhealthy targets will still be in the visitors cache for some time. On the other hand, ELB is not cached and will remove unhealthy targets from the target group immediately.
+
+* Define how Route 53 responds to DNS queries
+* It's not the same as Load balancer routing which routes traffic
+* DNS does not route any traffic, it only responds to the DNS queries
+
+Route 53 Supports the following Routing policies:
+* Simple
+* Weighted
+* Failover
+* Latency based
+* Geolocation
+* Multi-value answer
+* Geoproximity (using Route 53 traffic flow feature)
+
+
+___Health checks (not a policy type)___
+
+* Http health checks are only for public resources
+* Monitor endpoint
+* Health checks are integrated with Cloud watch metrics (helpful for private resources)
+
+Endpoint -> About 15 global health checkers will check the endpoint health, health checks are only passed with 2xx and 3xx responses.
+
+Calculated Health checks -> Combine the results of multiple health checks into a single health check, we can use AND, OR or NOT, we can monitor up to 256 child health checks.
+
+Private -> Use health checks to monitor cloudwatch alarms into your private VPC.
+
+___Simple___
+
+* Typically, route traffic to a single resource
+* Can specify multiple values in the same record
+* If multiple values are returned, a random one is chosen by the client
+* When alias is enabled, specify only one AWS resource
+* Can't be associated with Healt Checks
+
+___Weighted___
+
+* Control the % of the requests tha go to each specific resource
+* Assign each record a relative weight
+* DNS records must have the same name and type
+* Can be associated with health checks
+* Use cases: load balancing between regions, testing, etc
+* Assing a weight of 0 to a record to stop sending traffic to a resource
+* If all records have weight of 0, then all records will be returned equally
+
+___Latency based___
+
+* Redirect to the resource that has the least latency close to us
+* Helpful when latency is top priority
+* Latency is based on traffic between users and AWS regions
+* Germany users can be directed to US if that is the lowest latency
+* Can be associated with health Checks (Has a failover capability)
+
+___Failover(Active-passive)___
+
+* There is one instance that is the active, main instance
+* If main instance fails, the second instance will take its place until the main instance is healthy again
+
+___Geolocation___
+
+* Different from Latency-based
+* This routing is based on user location
+* Specify location by continent, country, or by US state
+* Should create a "Default" record (in case there is no match on location)
+* Use cases: website localization, restrict content distribution, load balancing
+* Can be associated with health checks
+
+___Geoproximity___
+
+* Route traffic to your resources based on the geographic location of users and resources
+* Ability to shift more traffic to resources based on defined bias
+* To change the size of the geographic region, specify a bias value:
+    * To expand (1 to 99) - more traffic to the resource
+    * To Shrink (-1 to -99) - less traffic to the resource
+
+* Resources can be:
+    * AWS resources (specify AWS region)
+    * Non-AWS resources (specify Latitude and Longitude)
+* Must use Route 53 traffic flow to use this feature
+
+
+___IP-based___
+
+* Routing based on clients' IP addresses
+* You provide a list of CIDRs for your clients and the corresponding endpoints/locations (user-IP-to-endpoint mappings)
+* Use cases: Optimize performance, reduce network cost
+* Route end users from a particular ISP to a specific endpoint
+
+___Multi Value___
+
+* Use when routing traffic to multiple resources
+* Route 53 return multiple value/resources
+* Can be associates with Health Checks
+* Up to 8 healthy records are returned for each Multi-Value query
+* not a substitute for having an ELB
+
+# ~~~~ AWS VPC ~~~~
+
+* Private network to deploy resources (regional resources)
+* Subnets allow you to partition your network inside your VPC (Availability zone resource)
+* Public subnet is a subnet that is accessible from the internet
+* Private subnet is a subnet that is not accessible from the internet
+* To define access between subnets we use Route Tables
+
+We have a default VPC per region and one public subnet per AZ with our AWS account.
+
+**Internet gateway and NAT Gateways**
+
+Public subnets have access to the internet through internet gateways, it helps our VPC instances connect with the internet, Public subnets have a route to the internet gateway.
+
+NAT gateway (AWS managed) and NAT instances (self-managed) allows your instances in your private subnets to access the internet while remaining private
+
+IGW -> NAT -> private subnet
+
+**Network ACL and Security Groups**
+
+* NACL (Network ACL)
+    * A firwewall which controls traffic from and to the subnet
+    * Can have allow and Deny rules
+    * Are attached to the subnet level
+    * Rules only include IP addresses
+
+* Security groups
+    * A firewall which controls traffic to and from an ENI / an EC2 instance
+    * Can have only ALLOW rules
+    * Rules include IP addresses and other security groups
+
+**VPC flow logs**
+
+Capture information about IP traffic going to your interfaces:
+* VPC flow logs
+* Subnet flow logs
+* Elastic network interface flow logs
+
+Helps to monitor and troubleshoot connectivity issues, captures network information from managed AWS interfaces -> ELB, ElasticCache, RDS, Aurora, etc.
+
+VPC flow logs can go to S3, CloudWatch logs, and Kinesis data firehouse
+
+**VPC Peering**
+
+* Connects two VPC privately using AWS network
+* Make them behave as if they were in the same network
+* Must not have overlapping CIDR (IP address range)
+* VPC Peering connection is not transitive (must be established for each VPC that need to communicate with one another)
+
+**VPC Endpoints**
+
+* Allow to connect to AWS services using a private network instead of the public www network
+* This give you enhanced security and lower latency to access AWS services
+* VPC endpoint gateway: S3 & DynamoDB
+* VPC endpoint interface: the rest
+
+
+# ~~~~ AWS S3 introduction ~~~~
+
+* Backup and storage
+* Distaster recovery
+* Archive
+* Hybrid cloud storage
+* Host applications
+* Media hosting
+* Data lakes and big data analytics
+* Software delivery
+* Static websites
+
+**Buckets**
+
+AWS S3 allows people to store objects (files) in "Buckets" (directories) each bucket must have a globally unique name (accross all regions all accounts)
+
+* AWS S3 buckets are defined at the region level
+* S3 looks like a global service but buckets are created in a region
+* Naming convention
+    * No uppercase, No underscore
+    * 3-63 characters long
+    * Not an IP
+    * Must start with lowercase letter or number
+    * Must not start with prefix xn--
+    * Must not end with suffix -s3alias
+
+**Objects**
+
+Object values are the content of the body
+
+* Max object size is 5TB
+* If uploading more than 5GB must use "Multi-part upload"
+* Objects (files) have a key
+* The key is the FULL path:
+    * s3://my-bucket/my_file.txt
+    * s3://my-bucket/my_folder1/another_folder/my_file.txt
+* The key is composed of **prefix** + object name
+    * s3://my-bucket/**my_folder1/another_folder**/my_file.txt
+
+**S3 security**
+
+* User-based
+    * IAM Policies- which API calls should be allowed for a specific user from IAM
+
+* Resource-based
+    * Bucket policies - bucket wide rules from the s3 console - allow cross account
+    * Object Access Control List (ACL) - finer grain (can be disabled)
+    * Bucket Access Control List (ACL) - less common (can be disabled)
+
+An IAM principal can access an S3 object if:
+* The user IAM permissions ALLOW it OR the resource policy ALLOWS it and there is not explicit DENY
+
+* Encryption: Encrypt objects in AWS S3 using encryption keys
+
+There is no concept of directories within buckets but UI can trick us.
+
+**S3 Versioning**
+
+* You can version files in AWS S3
+* IT is enabled at the bucket level
+* Same key overwrite will change the version: 1,2,3
+* It is a best practice to version buckets:
+    * Protect against unintended deletes (ability to restore a version)
+    * Easy roll back to previous version
+
+Any file that is not versioned prior to enabling versioning will have "null" version.
+Suspending versioning does not delete previous versions.
+
+**AWS S3 Replication**
+
+* Must enable versioning in source and destination buckets
+* Cross-Region Replication (CRR)
+* Same-Region Replication (SRR)
+* Buckets can be in different AWS accounts
+* Copying is asynchronous
+* Must give proper IAM permissions to S3
+
+Use cases:
+* CRR - compliance, lower latency access, replication across accounts
+* SRR - log aggregation, live replication between production and test accounts
+
+After replication is enabled, only new objects are replicated, we can replicate existing objects using S3 batch replication.
+
+For Delete operations, we can replicate delete markers from source to target and deletions with a version ID are not replicated (avoiding malicious deletes)
+
+Lastly there is no chaining of replication - If bucket 1 has replication into bucket 2, which has replication on bucket 3, then, objects created in bucket 1 are not replicated to bucket 3.
+
+**AWS S3 Storage classes**
+
+___General Purpose___
+
+* 99.99% Availability
+* Used for frequently accessed data
+* Low latency and high throughput
+* Sustain 2 concurrent facility failures
+* Use cases: Big data analytics, mobile and gaming applications, content distribution...
+
+___Infrequent access___
+
+* For data that is less frequently accessed but requires rapid access when needed
+* Lower cost than S3 standard
+* AWS S3 IA (S3 Standard-IA)
+    * 99.9% Availability
+    * Use cases: Disaster recovery, backups
+
+* AWS S3 One Zone-Infrequent Acess (S3 One Zone-IA)
+    * High Durability (99.999999%) in a single AZ, data lost when AZ is destroyed
+    * 99.95% availability
+    * Use cases: Storing secondary backup copies of on-premise data, or data you can recreate
+
+___Glacier Storage Classes___
+
+* Low-cost object storage meant for achiving / backup
+* Price: price for storage + object retrival cost
+
+* S3 Glacier Instant retrieval
+    * Millisecond retrival, great for data accessed once a quarter
+    * Minimum storage duration of 90 days
+* S3 Glacier Flexible retrival (formerly Amazon S3 glacier)
+    * Expedited (1 to 5 minutes), standar (3 to 5 hours), Bulkd (5 to 12 hours) - free
+    * Minimum storage duration of 90 days
+* S3 Glacier Deep archive
+    * Standar (12 hours), Bulk (48) Hours, meant for long term storage
+
+___Intelligent-Tiering___
+
+* Small monthly monitoring and auto tiering fee
+* Moves objects automatically between access tier based on usage
+* There are no retrieval charges in S3 intelligent tiering
+
+* Frequent access tier: default tier
+* Infrequent access tier: objects not accessed for 30 days
+* Archive instant access tier: objects not accessed for 90 days
+* Archive access tier: configurable from 90 to 700+ days
+* Deep Archive access tier: from 180 to 700+ days
+
+# ~~~~ AWS CLI, SDK, IAM Roles and Policies ~~~~
+
+* AWS EC2 Instance metadata (IMDS) is a powerful but one of the least known features to developers
+* Allows AWS EC2 isntances to "learn about themselves" without using an IAM Role for that purpose
+* You can retrieve the IAM Role name from the metadata, but you CANNOT retrieve the IAM Policy
+* Metadata = Info about the EC2 instance
+* Userdata = launch script of the EC2 instance
+
+
+IMDSv2 vs IMDSv1
+
+IMDSv2 is a more secure way to access the metadata information since it requires an auth token.
+
+**MFA with CLI**
+
+* To use MFA with the CLI, we must create a temporary session
+* To do so, we must run the STS GetSessionToken API call
+
+* aws sts get-session-token --serial-number arn-of-the-mfa-device --token-code code-from-token --duration-seconds 3600
+
+**AWS Limits (Quotas)**
+
+API Rate Limits
+* DescribeInstances API for EC2 has a limit of 100 calls per seconds
+* GetOjbect on S3 has a limit of 5500 GET per second prefix
+* For intermittent errors: implement Exponential backoff
+* For Consistent errors: request an API throttling limit increase
+
+Service quotas (service limits)
+* Running on-demand standar instances: 1152 vCPU
+* You can request a service limit increace by opening a ticket
+
+Exponential backoff
+* Getting a ThrotthlingException intermittently
+* Retry mechanism already included in AWS SDK API calls
+* Must implement yourself if using AWS API directly
+    * Only implement retries on 5xx codes
+
+**AWS CLI Credentials provider chain**
+
+The CLI will look for credentials in this order
+
+1. Command line options - --region, --output, --profile
+2. Environment variables - AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+3. CLI credentials file - aws configure
+4. CLI Configuration file - aws configure
+5. Container credentials - for ECS tasks
+6. Instance profile credentials - for EC2 Instance profiles
+
+Java SDK for example will look for credentials in this order
+
+1. Java system properties - aws.accessKeyId and aws.secretKey
+2. Environment variables - AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKENre
+3. The default credentials profiles file - shared by many SDK
+4. Amazon ECS Container credentials - for ECS containers
+5. Instance profile credentials - for EC2 Instance profiles
+
 ** _TCP is layer 4_.
 
 ** _HTTP and HTTPS are layer 7_
