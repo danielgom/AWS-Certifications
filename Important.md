@@ -1142,6 +1142,54 @@ Java SDK for example will look for credentials in this order
 4. Amazon ECS Container credentials - for ECS containers
 5. Instance profile credentials - for EC2 Instance profiles
 
+# ~~~~ AWS Advanced S3 ~~~~
+
+**Lifecycle rules**
+
+* Transition actions - configure objects to transition to another storage class
+    * Move objects to Standar IA class 60 days after creation
+    * Move to glacier for archiving after 6 months
+
+* Expiration actions - configure objects to expire (delete) after some time
+    * Access log files can be set to delete after 365 days
+    * Can be used to delete old versions of files (if versioning is enabled)
+    * Can be used to delete incomplete Multi-Part uploads
+
+Rules can be created for a certain prefix (example: s3://mybucket/mp3/*)
+Rules can be created for certain objects tags (example: Department finance)
+
+**Storage class analysis**
+
+* Helps to decide when to transition objects to right storage class
+* Recommendations for standard and standard IA
+    * Does not work for One-Zone IA and glacier
+* Report is updated daily
+* 24 to 48 to start seeing data analysis
+
+**S3 Event notifications**
+
+* S3:ObjectCreated, S3:ObjectRemoved
+* S3:ObjectRestore, S3:Replications...
+
+* Object name filtering possible (*.jpg)
+* Use case: generate thumbnails of images uploaded to s3
+* Create as many S3 events as desired
+* S3 events typically deliver events in seconds but can sometimes take longer than a minute
+
+In order so send notifications we need to set up IAM permissions for example
+
+* SNS:Publish
+* SQS:SendMessage
+* lambda:InvokeFunction
+
+All events end up in AWS EventBridge and this service can send over 18 AWS services as destinations.
+
+With AWS EventBridge we have:
+
+* Advanced filtering options - with JSON rules (metadata, object size, name...)
+* Multiple destinations - ex Step Functions, Kinesis streams / Firehose
+* Archive, replay events, reliable delivery
+
 ** _TCP is layer 4_.
 
 ** _HTTP and HTTPS are layer 7_
