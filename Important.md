@@ -1182,13 +1182,284 @@ In order so send notifications we need to set up IAM permissions for example
 * SQS:SendMessage
 * lambda:InvokeFunction
 
-All events end up in AWS EventBridge and this service can send over 18 AWS services as destinations.
+All events end up in AWS EventBridge for further processing and this service can send over 18 AWS services as destinations.
 
 With AWS EventBridge we have:
 
 * Advanced filtering options - with JSON rules (metadata, object size, name...)
 * Multiple destinations - ex Step Functions, Kinesis streams / Firehose
 * Archive, replay events, reliable delivery
+
+
+**S3 Baseline Performance**
+
+* Amazon S3 automatically scales to high requests rates, latency 100-200 ms
+* Application can achieve at least 3500 PUT/COPY/POST/DELETE or 5500 GET/HEAD requests per prefix in a bucket
+* There are no limit of prefixes in a bucket
+
+___S3 Performance___
+
+Multi-part upload:
+
+* Recommended for files > 100mb, must use for files > 5gb
+* Can help paralelize uploads by spliting the file into multiple parts and uploading them in parallel
+
+S3 Transfer acceleration (upload speed):
+
+* Increase the transfer speed by transferring file to AWS edge location which will forward the data to the S3 bucket in the target region
+* Compatible with multipart uploads
+
+Transferring the file from USA to edge location is public and fast, however, transferring the file from USA's Edge location to S3 bucket in Australia is faster since it used a private network in AWS.
+
+File in USA ---> Edge Location USA ---> S3 bucket AUSTRALIA
+
+S3 Byte-range fetches (Download speed):
+
+* Paralelize GETs by requesting specific byte ranges 
+* Better resiliance in case of failures
+* This works the same way as Multipart the difference is that this is a download action instead.
+* Can be used to retrieve only partial data (For example head of a file)
+
+___S3 Select & Glacier Select___
+
+* Retrieve less data using SQL by performing server-side filtering
+* Can filter by rows and columns
+* Less network transfer, less CPU cost client-side
+
+___S3 User-Defined Object Metadata & S3 Object Tags___
+
+* S3 User-Defined Object metadata
+    * When uploading objects you can assign metadata
+    * Name-value (key-value) pairs
+    * User-defined metadata must begin with "x-amz-meta"
+    * Amazon S3 stores used-defined metadata keys in lowercase
+    * Metadata can be retrieved while retrieving the object
+* S3 Object Tags
+    * Key-value pairs for Objects in Amazon S3
+    * Useful for fine grained permissions (Only access specific objects with specific tags)
+    * Useful for analytics (S3 objects grouped by tags)
+
+* Cannot search by metadata or object tags
+* Instead save metadata and tags in an Index in a SQL database such as MySQL or DynamoDB and search for it.
+
+# ~~~~ AWS S3 Security ~~~~
+
+**S3 Object encryption**
+
+You can encrypt objets in S3 buckets using one of 4 methods:
+
+* Server-Side Encryption (SSE)
+    * Server-Side Encryption with Amazon S3-Managed-Keys (SSE-S3) - Enabled by default
+        * Encrypts S3 objects using keys handled, managed and owned by AWS
+    * Server-side Encryption with Amazon KMS in AWS KMS (SSE-KMS) 
+        * Leverage AWS key management services to manage encryption keys
+    * Server-side Encryption with Customer provided keys (SSE-C)
+        * When you want to manage your own encryption keys
+* Client-Seide Encryption
+
+___Server-Side Encryption with Amazon S3-Managed-Keys (SSE-S3)___
+
+* Encryption using keys handled by AWS
+* Object is encrypted in the server (AWS)
+* Encryption type is AES-256
+* Must set header "x-amz-server-side-encryption":"AES256"
+* Enabled by default by new buckets and objects
+
+___Server-side Encryption with Amazon KMS in AWS KMS (SSE-KMS)___
+
+* Encrytion using KMS
+* KMS Advantages: control + audit keys usage using CloudTrail
+* Object is encrypted in the server
+* Must set header "x-amz-server-side-encryption":"aws:kms"
+
+Limitations:
+
+* May impact the KMS limits
+* When uploading objects it calls GenerateDataKey KMS API
+* When dowloading calls decrypt KMS API
+* Counts towards the KMS quota per second
+* Can increase quota using Service Quotas Console
+
+___Server-side Encryption with Customer provided keys (SSE-C)___
+
+* Fully managed by by customer outside AWS
+* Amazon S3 does not store the encryption key provided
+* HTTPS must be used
+* Encryption key must be provided in HTTP header for every HTTP request
+
+___Client-Seide Encryption___
+
+* Use client libraries such as Amazon S3 Client-side encryption library
+* Clients must encrypt data before sending to Amazon S3
+* Clients must decrypt data when retrieving from Amazon S3
+* Customer fully manages keys and encryption cicle
+
+**Encryption in transit (TLS/SSL)**
+
+AWS S3 Exposes two endpoints:
+* HTTP - not encrypted
+* HTTPS - Encrypted
+
+HTTPS is recomended and mandatory for SSE-C.
+
+**S3 Access logs**
+
+* For audit purpose we can log access to S3 buckets
+* Any request made to S3 from any account, authorized or denied will be logged into another S3 bucket
+* This data can be analyzed and it must be in the same AWS region
+
+**S3 Pre-Signed URLs**
+
+Generate pre-signed URLs using S3 console, AWS CLI or SDK
+
+* URL Expiration
+    * S3 Console - 1 min up to 720
+    * AWS CLI - in seconds up to 168 hours
+* Users given a pre-signed URL for the GET/PUT
+
+**S3 Access points**
+
+Simplify security management for S3 buckets, Each access point has:
+
+* Its own DNS name (Internet origin or VPC orign)
+* An access point policy (similar to bucket policy) - manage security at scale
+
+Example:
+
+* Finance Team --> Finance team Access point --> S3 bucket /Finance prefix
+* Sales Team --> Sales team Access point --> S3 bucket /Sales prefix
+* Analytics Team --> Analytics team Access point --> S3 bucket /Analytics prefix
+
+
+___VPC Origin___
+
+* Can enable access point to be accessible only from within the VPC
+* You must create VPC Endpoint to access the access point , Gateway or Interface Endpoint
+* The VPC Endpoint Policy must allow access to the target bucket and Access Point
+
+
+**S3 Object lambda**
+
+* Use AWS Lambda functions to change the object before it is retrieved by the caller application
+* Only one S3 bucket is needed on top of we create S3 Access point and S3 Object Lambda Access.
+
+S3 --> S3 object lambda (convert data) --> response
+
+
+# ~~~~ AWS Cloud Front ~~~~
+
+Cloud Front is the CDN (Content delivery network) for AWS.
+
+* Cloud Front uses Edge location to deliver content
+* It functions like a cache for S3 bucket contents, it saves content in the nearest Edge Location
+* Cloud front can be used as an Ingress to upload to S3
+
+**CloudFront caching**
+
+* The cache lives at each EdgeLocation 
+* CloudFront Identifies each object in the cache using the Cache Key 
+* You want to maximize the cache hit ratio to minimize request to the origin
+* Can Invalidate part of the cache using CreateInvalidation API
+
+CloudFront cache key:
+
+* A unique identifier for every object in the cache
+* By default consists of hostname + resource portion of the URL
+* Can add other elements , Headers, cookies, query strings to the cache key using CloudFront Cache policies
+
+**Cache Policy**
+
+* Cache based on:
+    * HTTP headers: None - whitelist
+    * Cookies - None - Whitelist
+    * Query string - None - whitelist - Include All-Except All
+* Control the TTL, can be set by the origin using the cache control header, Expires header
+* Create your own policy or use predefined Managed policies
+
+**Cache Invalidations**
+
+* In case S3 object is updated, CloudFront does not know it until TTL has expired (acts like cache for the content)
+* We can force an entire or partial cache refresh by performing a CloudFront Invalidation
+* We can invalidate all files (*) or a specific path (/images/*)
+
+**Cache Behaviour**
+
+* Configure different settings for a given URL path pattern
+* Example: one specific cache behaviour to images/*.jpg files on your origin web server
+* Route to different kind of origins/origin groups based on the content type or path pattern
+    * /images/*
+    * /api/*
+    * /* (default cache behaviour)
+* When adding additional cache behaviours the Default cache behaviour is always the last to be processed and is always /*
+
+
+**CloudFront Geo Restriction**
+
+* You can restrict who can access your distribution
+    * AllowList: Allow your users to access your content only if they are in one of the countries on a list of a approved countries
+    * BlockList: Prevent your users from accessing your content if they are in one of the countries on a list of banned countries
+* The country is determined using 3rd party Geo-IP Database
+* Use case: Copyright Laws to control access to content
+
+**CloudFront Signed URL/Signed cookies**
+
+* You want to distribute paid shared content to premium users over the world
+* We can used CloudFront signed URL / Cookie, We attach a policy with:
+    * Includes URL expiration
+    * Includes IP ranges to access data from
+    * Trusted Signers (which AWS accounts can create signer URLs)
+* How long the URL be valid for:
+    * Shared content (movie, music): make it short (few minutes)
+    * Private content (private to the user): can make last it for years
+
+* Signed URL: access to individual files (one Signed URL per file)
+* Signed Cookies: access to multiple files (one signed cookie for many files)
+
+CloudFront Signed URL vs S3 Pre-Signed URL
+
+CloudFront
+* Allow access to path no matter the origin, S3, EC2 etc
+* Account wide key-pair, only the root can manage it
+* Can filter by IP, path, date, expiration
+* Can leverage caching features
+
+S3 Pre-Signed URL
+* Issue a request as the person who pre-signed the URL
+* Uses the IAM key of the signing IAM principal
+* Limited lifetime
+
+
+**CloudFront Multiple Origin**
+
+* To route to different kind of origins based on the content type
+* Based on pattern:
+    * /images/* ----> EC2
+    * /api/* -------> Application Load Balancer
+    * /* -----------> S3 bucket
+
+**CloudFront Origin Groups**
+
+* To increase high-availability and do failover
+* Origin Group: one primary and one secondary origin
+* If the primary origin fails, the second one is used
+
+**CloudFront Field Level Encryption**
+
+* Protect user sensitive information through application stack
+* Adds an additional layer of security along with HTTPS
+* Sensitive information encrypted at the edge close to user
+* Uses asymmetric encryption
+* Usage:
+    * Specify set of fields in POST requests that you want to be encrypted (up to 10 fields)
+    * Specify the public key to encrypt them
+
+**CloudFront Real time logs**
+
+* Get real-time requests received by CloudFront sent to Kinesis Data Streams
+* Monitor, analyze and take actions based on content delivery performance
+* Allows to choose:
+    * Sampling rate - percentage of requets for which you want to receive
+    * Specific fields and specific cache behaviours (path patterns)
 
 ** _TCP is layer 4_.
 
