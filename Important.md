@@ -434,7 +434,7 @@ EFS - Performance & Storage classes
     * One Zone: One AZ, great for dev, backup enabled, by default compatible with IA infrequent access over 90% in cost savings.
 
 # ~~~~ AWS FUNDAMENTALS ELB + ASG ~~~~
-### EBS elastic load balancer
+### ELB elastic load balancer
 
 AWS has 4 kinds of managed Load Balancers
 
@@ -592,7 +592,7 @@ ASG are free, you only pay for the EC2 instances that may be created.
 
     ___Instance Refresh___
 
-    wheneve we update the launch template new EC2 instance will appear while old EC2 instances using the old launch template will be terminated 
+    whenever we update the launch template new EC2 instance will appear while old EC2 instances using the old launch template will be terminated 
 
     Not all instances will be terminated, we can set a minimum healthy percentage in order to avoid deleting all current instances.
 
@@ -1460,6 +1460,341 @@ S3 Pre-Signed URL
 * Allows to choose:
     * Sampling rate - percentage of requets for which you want to receive
     * Specific fields and specific cache behaviours (path patterns)
+
+# ~~~~ AWS ECS, ECR and Fargate ~~~~
+
+**ECS - EC2 Launch Type**
+
+* ECS = Elastic contaiener service
+* Launch docker containers on AWS = Launch ECS Tasks on ECS Clusters
+* EC2 LaunchType -> you must provision & maintain the infrastructure (the EC2 instances)
+* Each EC2 instance must run the ECS agent to register in the ECS cluster
+* AWS takes care of starting/stopping containers
+
+**ECS - Fargate Launch Type**
+
+* Launch Docker containers on AWS
+* You do not need to provision the infrastructure
+* It's all serverless
+* You just create task definitions
+* AWS just runs ECS tasks for you based on the CPU/RAM needed
+* To scale, just increase the number of tasks
+
+**ECS - IAM roles for ECS**
+
+* EC2 instance profile (EC2 Launch Type only)
+    * Used by the ECS agent
+    * Makes API calls to ECS service
+    * Send container logs to CloudWatch logs
+    * Pull Docker image from ECR
+    * Reference sensitive data in Secrets manager or SSM parameter store
+
+* ECS Task Role
+    * Allows each task to have a specific role
+    * Use different roles for the different ECS services you run
+    * Task role is defined in the task definition
+
+**ECS - ELB Integrations**
+
+ECS can be integrated with any ELB type.
+
+**ECS - Data volumes EFS**
+
+* Mount EFS file systems onto ECS tasks
+* Works for both EC2 and Fargate Launch types
+* Task running in any AZ will share the same data in the EFS file system
+* Fargate + EFS = Serverless
+* Amazon S3 cannot be mounted as a file system
+
+**ECS Service auto scaling**
+
+* Automatically increase/decreasse the desired number of ECS tasks
+* Amazon ECS Auto Scaling uses AWS application auto scaling
+    * ECS service Average CPU utilization
+    * ECS service Average memory utilization - Scale on RAM
+    * ALB requests count per target - metrinc coming from the ALB 
+
+* Target tracking - scale based on target value for a specific CloudWatch metric
+* Step Scaling - scale based on a specified CloudWatch Alarm
+* Scheduled Scaling - scale based on a specified date/time (predictable changes)
+
+* ECS service auto scaling (task level) != EC2 Auto scaling (EC2 instance level)
+* Fargate auto caling is much easier to setup (serverless)
+
+**ECS Launch Type - Auto scaling EC2 instances**
+
+* Accommodate ECS service scaling by adding underlying EC2 instances
+* Auto scaling group scaling
+    * Scale ASG based on CPU utilization
+    * Add EC2 instances over time
+* ECS cluster capacity provider (Prefered for EC2 launch type)
+    * Used to automatically provision and scale the infrastructure for your ECS tasks
+    * Capacity provider paired with an auto scaling group
+    * Add EC2 instances when you are missing capacity (CPU, RAM)
+
+**ECS Rolling updates**
+
+* When updating a service from v1 to v2, we can control how many tasks can be started and stopped and in which order
+* Can set Max and minimum healthy tasks such as Kubernetes RollOut Updates
+
+**ECS Task Definitions**
+
+* Task defninitions are metadata in JSON form to tell ECS how to run a Docker container
+* It contains crucial information such as:
+    * Image Name
+    * Port Binding for Container and Host
+    * Memory and CPU required
+    * Environment variables
+    * Netowkring information
+    * IAM Role
+    * Logging configuration (ex Cloudwatch)
+* Can define up to 10 containers in a Task Definition
+
+**ECS Load Balancing (EC2 Launch Type)**
+
+* We get a Dynamic Host port mapping if you define only the container port in the task definition
+* The ALB finds the right port on your EC2 instances
+* Must allow on the EC2 instance's security group any port from the ALB's security group
+
+**ECS Load Balancing (Fargate)**
+
+* Each task has a unique private IP
+* Only define the container port (host port is not applicable)
+* Example
+    * ECS ENI security group
+        * Allow port 80 from the ALB
+    * ALB Security group
+        * Allow port 80/443 from web
+
+**ECS Roles**
+
+* One IAM Role per Task Definition
+
+**ECS Environment Variables**
+
+* Environment Variaable
+    * Harcoded - e.g. URLs
+    * SSM Parameter store - sensitive variables (e.g. API Keys, shared configs)
+    * Secrets Manager - sensitive variables (e.g. DB passwords)
+* Environment Files (bulk) - AWS S3
+
+**ECS Data Volumes (bind mounts)**
+
+* Share data between multiple containers in the same Task Definition
+* Works for both EC2 and fargate tasks
+* EC2 Tasks - Using EC2 instance storage
+    * Data are tied to the lifecycle of the EC2 instance
+* Fargate tasks - using ephimeral storage
+    * Data are tied to the containers(s) using them
+    * 20 GiB - 200 GiB (default 20 GiB)
+
+* Use cases:
+    * Share ephemeral data between multiple containers
+    * Sidecar container pattern, where the sidecar container used to send metrics logs to other destinations (separation of concerns)
+
+
+**ECS Task Placement (EC2 Launch Type only)**
+
+* When a task of type EC2 is launched, ECS must determine where to place it, with the contrains of CPU, memory and available port
+* Similarly, when a service scales in, ECS needs to determine which task to terminate
+* To assist with this, you can define a task placement strategy and task placement constraints
+
+**ECS Task Placement process**
+
+* Task placement strategies are best effort
+* When amazon ECS places tasks , it uses the following process to select container instances:
+    * Identify the instances that satisfy the CPU, memory and port requirements in the task definition
+    * Identify the instances that satisfy the task placement constraints
+    * Identify the instances that satisfy the task placement strategies
+    * Select the instances for task placement
+
+**ECS Task Placement process**
+
+___Binpack___
+
+* Place tasks based on the least available amount of CPU or memory
+* This minimizes the number of instances in use (cost savings)
+
+___Random___
+
+* Place the task randomnly in EC2 instances
+
+___Spread___
+
+* Place the task evenly based on the specified value
+* Example: instanceId, attribute: ecs.availability-zone
+
+**ECS Task Placement constraints**
+
+* distinctInstance: place each task on a different container instance
+* memberOf: places task on instances that satisfy an expression
+    * Place tasks on instance type t2
+
+**ECR**
+
+Elastic container registry
+
+* Store and manage Docker images on AWS
+* Private and Public repository (Amazon ECR public gallery)
+* Fully integreated wiht ECS, backed by AWS S3
+* Access controlled through IAM (permission errors => policy)
+* Supports image vulnerability scanning, versioning, image tags, image lifecycle
+
+
+**Copilot**
+
+* CLI tool to build, release and operate production-ready containerized apps
+* Run your apps on AppRunner, ECS and fargate
+* Helps you focus on building apps rather than setting up infrastructure
+* Provisions all required infrastructure for containerized apps (ECS, VPC, ELB, ECR...)
+* Automated deployments with one command using CodePipeline
+* Deploy to multiple environments
+* Troubleshooting, logs, health status, etc...
+
+**EKS**
+
+* Amazon EKS = Amazon Elastic Kubernetes service
+* it is a way to launch managed Kubernetes Clusters on AWS
+* Kubernetes is an open-source system for automatic deployment, scaling and management of containerized applications
+* its an alternative to ECS
+* EKS supports EC2 if you want to deploy worker nodes or fargate to deploy serverless containers
+* Use case: if you company is already using Kubenetes on-premises or in another cloud and wants to migrate to AWS using kubernetes
+* Can be used by any cloud
+
+**EKS Node Types**
+
+___Managed Node groups___
+
+* Creates and manages nodes for you
+* Nodes are part of an ASG managed by EKS
+* Supports on-demand or spot instances
+
+___Self managed nodes___
+
+* Nodes created by you and registered to the EKS cluster and managed by an ASG
+* You can use prebuilt AMI - Amazon EKS optimized AMI
+* Supports On-demand or spot instances
+
+___AWS Fargate___
+
+* No maintenance required; no nodes managed
+
+**EKS Data volumes**
+
+* Need to specify storageclass manifest on EKS cluster
+* Leverages a container storage interface compliant driver
+* Support for:
+    * Amazon EBS
+    * Amazon EFS with fargate
+    * Amazon FSx for Lustre
+    * Amazon ESx for NetApp ONTAP
+
+
+# ~~~~ AWS Elastic Beanstalk ~~~~
+
+Elastic Beanstalk is a developer centric view of deploying an application on AWS
+
+* It used all the component's we've seen before: EC2, ASG, ELB, RDS
+* Managed service
+    * Automatically handles capacity provisioning loadbalancing, scaling, application health monitoring, instance configuration....
+    * Just the application code is the responsibility of the developer
+* We still have full control over the configuration
+* Beanstalk is free but you pay for the underlying instances
+
+**Elastic Beanstalk components**
+
+* Application: collection of Elastic Beanstalk components (environments, versions, configurations...)
+* Application version: an iteration of your application code
+* Environment
+    * Collection of AWS resources running an application version (only one application version at a time)
+    * Tiers: Webserver environment tier & Worker Environment Tier
+    * You can create multiple environments (dev, test, prod...)
+
+___Webserver tier___
+
+It works as a common web server where applications are deployed under ELB
+
+___Worker tier___
+
+It works behind SQS queues, once a message is under a SQS queue, workers process this information
+
+* Scales based on the number of SQS messages
+* Can push messages to SQS queue from another Web server tier
+
+**Elastic Beanstalk Deployment modes**
+
+* All at once (deploy all in one go) - fastest, but instances aren't available to serve for a little bit (downtime)
+* Rolling - update a few instances at a time, and then move onto the next bucket once the first bucket is healthy
+* Rolling with additional batches - same as rolling but spins up new instances to move the batch (old application still available)
+* Immutable - spins up new instances in a new ASG, deploys version to these instances, and then swaps all the instances when everything is healthy
+* Blue green - create a new environment and switch over when ready
+* Traffic splitting - canary testing, sends a small % of traffic to the new deployment
+
+* Single instances -> good for dev, test
+* High Availability with Load Balancer -> good for prod
+
+
+**Elastic Beanstalk Lifecycle policy**
+
+* Elastic Beanstalk can store at most 1000 application versions
+* If you don't remove old versions you won't be able to deploy anymore
+* To phase out old application versions, use a lifecycle policy
+    * Based on time (old versions are removed)
+    * Based on space (when you have too many versions)
+* Versions that are currently used won't be deleted
+* Option not to delete the source bundle in S3 to prevent data loss
+
+**Elastic Beanstalk Extensions**
+
+* A zip file containing our code must be deployed to Elastic Beanstalk
+* All the parameters set in the UI can be configured with code using files
+* Requirements:
+    * in the .ebextensions/ directory in the root of source code
+    * YAML / JSON format
+    * .config extensions (example: logging.config)
+    * Able to modify some default settings using: option_settings
+    * Ability to add resources such as RDS, ElastiCache, DynamoDB, etc
+* Resources managed by .ebextensions get deleted if the environment goes away
+
+**Elastic Beanstalk Under the hood**
+
+* Elastic beanstalk uses/relies on CloudFormation
+* CloudFormation is used to provision other AWS Services
+* Use case: you can define CloudFormation resources in your .ebextensions to provision ElastiCache, S3 bucket, anything...
+
+**Elastic Beanstalk Cloning**
+
+* Clone an environment with the exact same configuration
+* Useful for deploying a "test" version of your application
+* All resources and configuration are preserved:
+    * Load balancer type and config
+    * RDS Database type (data is not preserved)
+    * Environment variables
+* After cloning an environment you can change settings
+
+
+**Elastic Beanstalk Migration: Load Balancer**
+
+* After creating an ElasticBeanstalk environment, you cannot change the Elastic Load Balancer Type (only configuration)
+* To migrate:
+    * Create a new environment with the same configuration except LB
+    * Deploy application onto the new environment
+    * perform a CNAME swap or Route53 update
+
+**Elastic Beanstalk RDS**
+
+* RDS can be provisioned with Beanstalk, which is great for dev/test
+* This is not great for prod as the database lifecycle is tied to the Beanstalk environment lifecycle
+* The best for prod is to separately create an RDS database and provide our EB application with the connection string
+
+___Decouple RDS___
+
+1. Create a snapshot of RDS DB as safeguard
+2. Go to the RDS console and protect the RDS database from deletion
+3. Create a new Elastic Beanstalk environment without RDS, point your application to existing RDS
+4. Perform a CNAME swap (blue/green) or Route 53 update, confirm it works
+5. Terminate the old environment (RDS won't be deleted)
+6. Delete CloudFormation stack (in DELETE_FAILED state)
 
 ** _TCP is layer 4_.
 
