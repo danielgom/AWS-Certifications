@@ -1465,7 +1465,7 @@ S3 Pre-Signed URL
 
 **ECS - EC2 Launch Type**
 
-* ECS = Elastic contaiener service
+* ECS = Elastic container service
 * Launch docker containers on AWS = Launch ECS Tasks on ECS Clusters
 * EC2 LaunchType -> you must provision & maintain the infrastructure (the EC2 instances)
 * Each EC2 instance must run the ECS agent to register in the ECS cluster
@@ -1795,6 +1795,892 @@ ___Decouple RDS___
 4. Perform a CNAME swap (blue/green) or Route 53 update, confirm it works
 5. Terminate the old environment (RDS won't be deleted)
 6. Delete CloudFormation stack (in DELETE_FAILED state)
+
+
+# ~~~~ AWS CloudFormation ~~~~
+
+CloudFormation is a delarative way of outlining your AWS infrastructure, for any resources (most of them are supported), it works as infrastructure as code
+
+* Templates have to be uploaded in S3 and then referenced in CloudFormation
+* To update a template, we can't edit previous ones. We have to re upload a new version of the template to AWS
+* Stacks are identified by a name
+* Deleting a stack deletes every single artifcact that was created by CloudFormation
+
+
+___Deploying Templates___
+
+* Manual Way:
+    * Editing templates in the CloudFormation Designer
+    * Using the console to input parameters, etc
+* Automated way:
+    * Editing templates in a YAML file
+    * Using the AWS CLI (Command Line interface) to deploy the templates
+    * Recommended way when you fully want to automate your workflow
+
+**CloudFormation Resources**
+
+* Resources are the core of your CloudFormation template (MANDATORY)
+* They represent the different AWS components that will be created and configured
+* Resources are declared and can reference each other
+* AWS figures out creation, updates and deletes resources for us
+* There are over 224 types of resources
+* Resource types identifiers are of the form:
+    * AWS::aws-product-name::data-type-name
+* Cannot create code generation in the CloudFormation Template (non-dynamic)
+
+**CloudFormation Parameters**
+
+* Parameters are a way to provide inputs to your AWS CloudFormation template
+* They're important to know about if:
+    * You want to reuse your templates accross the company
+    * Some inputs can not be determined ahead of time
+* Parameters are extremely powerful, controlled and can prevent errors from happening in your templates thanks to types
+
+___Referencing a parameter___
+
+* The Fn::Ref function can be leveraged to reference parameters
+* Parameteres can be used anywhere in a template
+* The shorthand for this in YAML is !Ref
+* The function can also reference other elements within the template like resources
+
+**CloudFormation Mappings**
+
+* Mappings are fixed variables within your CloudFormation Template
+* They are very handy to differentiate between different environments (dev vs prod), regions (AWS regions), AMI types, etc
+* All the values are hardcoded within the template
+* Mappings are great when you know in advance all the values that can be deduced from variables such as:
+    * Region
+    * Availability zone
+    * AWS Account
+    * Environment
+
+___Accessing Mapping values___
+
+* We use Fn::FindInMap to return a named value from a specific key
+* !FindInMap [ MapName, TopLevelKey, SecondLevelKey]
+
+```yaml
+Mappings:
+    RegionMap:
+        us-east-1:
+            "32": "ami-123456"
+            "64": "ami-7890"
+        us-west-1:
+            "32": "ami-abcde"
+            "64": "ami-fghij"
+```
+* Example -> !FindInMap [ RegionMap, !Ref "AWS::Region", 32], imagine if we are in us-east-1 then we know what this value will be
+
+
+**CloudFormation Outputs**
+
+* The Outputs section declares optional outputs values that we can import into other stacks(if exported)
+* Can also view the outputs in the AWS Console or using the AWS CLI
+* Best way to perform collaboration cross stack, as you let expert handle their own part of the stack
+* You can't delete a CloudFormation Stack if its outputs are being referenced by another CloudFormation Stack
+
+___Cross Stack Reference___
+
+* We then create a second template that leverages that security group
+* For this we use the Fn::ImportValue function
+* You can't delete the underlying stack until all the references are deleted too.
+
+**CloudFormation Conditions**
+
+* Conditions are used to control the creation of resources or outputs based on a condition
+* Conditions can be wathever you want to be
+* Each condition can reference another condition, parameter value or mapping
+
+**CloudFormation Intrinsic functions**
+
+* The Fn:Ref function can be leveraged to reference
+    * Parameters -> returns the value of the parameter
+    * Resources -> Returns the physical ID of the underlying resource
+    * Shorthand !Ref
+
+
+* The Fn:GettAtt returns attributes thata re attached to any resource created
+    * To know the attributes of the resources we can look at documentation
+    * Example -> !GetAtt EC2Instance.AvailabilityZone
+
+
+* The Fn:Join, joins values with a delimiter
+    * Example -> !Join [":", [a, b, c]] -> a:b:c
+
+
+* Fn:Sub or !Sub as a shorthand is used to substitute variables from a text, its a very handy function that will allow you to fully customize your templates
+* For eample combining Fn:Sub  with references or AWS Pseudo variables
+
+**CloudFormation Rollbacks**
+
+* Stack Creation fails:
+     * Default: everything rolls back (gets deleted), we can look at the log
+     * Option to disable rollback and troubleshoot what happened
+* Stack Update fails:
+    * The stack automatically rollsback to the previous known working state
+    * Ability to see in the log what happened and error messages
+
+
+**CloudFormation ChangeSets**
+
+* When you update a stack you need to known what changes before it happens for greater confidence
+* Change sets won't say if the update will be successful
+
+**CloudFormation CrossStack|NestedStack**
+
+* Cross Stacks:
+    * Helpful when stacks have different lifecycles
+    * Use outpits export and Fn::ImportValue
+    * When you need to pass export values to many stacks
+
+* Nested Stacks
+    * Helpful when components must be re-used
+    * Ex: re-use how to properlyconfigure an Application load balancer
+    * Nested stack is only important to the higher level stack
+
+**CloudFormation StackSets**
+
+* Create, update or delete stacks across multiple accounts and regions with a single operation
+* Administrator account to create StackSets
+* Trusted accounts to create, update, delete stack instances from stacksets
+* When you update a stack set, all associated stacks instances are updated throughout all accounts and regions
+
+
+**CloudFormation Stack policies**
+
+* During a CloudFormation stack update all update actions are allowed on all resources
+* A stack policy is a JSON document that defines the updatre actions that are allowed on specific resources during stack updates
+* Protect resources from unintentiontal updates
+* When you set a stack policy, all resources in the stacka re protected by default
+* Specify an explicit ALLOW for the resources you want to be allowed to be updated
+
+# ~~~~ AWS SQS, SNS and Kinesis ~~~~
+
+**Amazon SQS Standard queue**
+
+* Oldest offering
+* Fully managed service, used to decouple applications
+* Attributes:
+    * Unlimited throughput, unlimited number of messages in queue
+    * Default retention of messages: 4 days, max 14 days
+    * Low latency < 10ms on publish and receive
+    * Limitation of 256Kb per message sent
+* Can have duplicate messages (at least once delivery, occasionally)
+* Can have out of order messages(best effort ordering)
+
+**Amazon SQS Producing messages**
+
+* Produces to SQS using the SDK(SendMessage API)
+* The mesage is persisted in SQS until a consumer delets it
+* Message retention: 4 days up to 14 days
+
+**Amazon SQS Consuming**
+
+* Consumers can run on EC2, local servers or AWS lambda
+* Poll SQS for messages, receive up to 10 messages at a time
+* Process the messages
+* Delete the messages using the DeleteMessage API
+
+**Amazon SQS Multiple EC2 instances as consumers**
+
+* Consumers receive and process messages in parallel
+* At least once delivery
+* Best effort message ordering
+* Consumers delete messages after processing them
+* We can scale consumers horizontally to improve throughtput of the processing
+
+**Amazon SQS Security**
+
+* Encryption:
+    * In-flight encryption using HTTPS API
+    * At rest encryption using KMS keys
+    * Client-side encryption if the client wants to perform encryption/decryption itself
+* Access Controls: IAM policies to regulate access to the SQS API
+* SQS access policies
+    * Similar to S3 bucket policies
+    * Useful for cross-account access to SQS queues
+    * Useful for allowing other services to write to an SQS queue
+
+**Amazon SQS Message visibility timeout**
+
+* After a message is polled by a consumer, it becomes invisible to other consumers
+* By default, the "message visibility timeout" is 30 seconds
+* That means the message has 30 seconds to be processed
+* After the message visibility timeout is over, the message is visible in SQS
+* If a message is not processed withing the visibility timeout, it will be processed twice
+* A consumer could call the ChangeMessageVisibility API to get more time
+* If visibility timeout is high and consumer crashes, re-processing will take time
+* If visibility timeout is too low we may get duplicates
+
+**Amazon SQS Dead letter queue DLQ**
+
+* If a consumer fails to process a message withing the same Visibility Timeout the message becomes visible again in the queue
+* We can set a threshold of how many times a message can go back to the queue
+* After the MaximumReceives threshold is exceeded, the message goes back into a dead letter queue DLQ
+* DLQ of a FIFO queue must also be a FIFO queue
+* DLQ of a Standar queue must also be a standard queue
+* Make sure to process the messages in the DLQ before they expire
+    * Good to set a retention of 14 days in the DLQ
+
+**Amazon SQS DLQ Redrive to source**
+
+* Feature to help consume messages in the DLQ to understand what is wrong with them
+* When our code is fixed, we can redrive the messages from the DLQ back into the source queue (or any other queue) in batches without writing custom code
+
+**Amazon SQS Delay queue**
+
+* Delay a message so consumers don't see it immediately up to 15 minutes
+* Default is 0 second, message is available right away
+* Can set a default at queue level
+* Can override the default on send using the DelaySeconds parameter
+
+**Amazon SQS Long polling**
+
+* When a consumer requests messages from the queue, it can optionally wait for messages to arrive if there are none in the queue
+* This is called LongPolling
+* LongPolling decreases the number of API calls made to SQS while increasing the efficiency and latency of your application
+* The wait time can be between 1 sec to 20 sec
+* Long Polling is preferable to Short polling
+* Long Polling can be enable at the queue level or at the API level using ReceiveMessageWaitTimeSeconds
+
+**Amazon SQS Extended Client**
+
+* Message size limit is 256KB, how to send large messages?
+* Using the SQS extended client -> java library
+* Uses S3 behind the scenes
+
+**Amazon SQS Must Know API**
+
+* CreateQueue (Message retention period), Delete queue
+* PurgeQueue: Delete all the messages in queue
+* SendMessage (DelaySeconds), receive message, delete message
+* MaxNumberOfMessages: default 1, max 10, for receiveMessage API
+* ReceiveMessageWaitTimeSeconds: Long polling
+* ChangeMessageVisibility: change the message timeout
+
+* Batch APIS for sendMessage, DeleteMessage, ChangeMessageVisibility, helps to decrease costs
+
+**Amazon SQS FIFO Queue**
+
+* FIFO = First In First Out
+* Limited throughput: 300 msg/s without batching, 3000 msg/s with batching
+* Exactly-once send capability, removing duplicates
+* Messages are processed in order by the consumer
+
+**Amazon SQS FIFO Deduplication**
+
+* De-duplication interval is 5 minutes
+* Two de-duplication methods
+    * Content-based deduplication: will do a SHA-256 has of the message body
+    * Explicitly provide a Message Deduplication ID
+
+**Amazon SQS Message Grouping**
+
+* If you specify the same value of MessageGroupID in an SQS FIFO queue, you can only have one consumer, and all the messages are in order
+* To get ordering at he level of a subset of messages, specify different values for MessageGroupID
+    * Messages that share a common Message Group ID will be in order within the group
+    * Each Group ID can have a different consumer
+    * Ordering accross groups is not guaranteeed
+
+**Amazon SNS**
+
+* The event producer only sends message to one SNS topic
+* As many event receivers (subscriptions) as we want to listen to the SNS topic notifications
+* Each subscriber to the topic will get all the messages (note: new feature  to filter messages)
+* Up to 12,500,000 subscriptions per topic
+* 100,000 topics limit
+
+**Amazon SNS security**
+
+* Encryption
+    * In-flight encryption using HTTPS API
+    * At-rest encryption using KMS keys
+    * Client-side encryption if the client wants to perform encryption/decryption itself
+* Access controls: IAM policies to regulate access to the SNS API
+* SNS Access Policies (similar to S3 buckets)
+    * Useful for cross-account access to SNS topics
+    * Useful for allowing other services to write to an SNS topic
+
+**Amazon SNS+SQS fan out**
+
+* Push once in SNS, receive in all SQS queues that are subscribers
+* Fully decoupled, no data loss
+* SQS allows for: data persistence, delayed processing and retries of work
+* Ability to add more SQS subscribers over time
+* Make sure your SQS queue access policy allow for SNS to write
+* Cross-region delivery: works with SQS queues in other regions
+* If you want to send the same S3 event to many SQS queues, use fan-out
+
+**Amazon SNS FIFO Topic**
+
+* FIFO = First in first out ordering
+* Similar features as SQS FIFO:
+    * Ordering by message group ID
+    * Deduplication using a deduplication ID or content based deduplication
+* Can only have SQS FIFO queues as subscribers
+* Limited throughput, same as SQS
+
+**Amazon SNS Message filtering**
+
+* JSON policy used to filter messages sent to SNS topic's subscriptions
+* If as subscription doesn't have a filter polic, it receives every message
+
+**Amazon Kinesis**
+
+Service which makes it easy to collect, process and analyze streaming data in real-time, can ingest real time data such as: Application logs, Metrics, Website clickstreams, IOT, telemetry.
+
+* Kinesis Data streams: capture, process and store data streams
+* Kinesis Data firehose: load data streams into AWS data stores
+* Kinesis Data analytics: analyze data streams with SQL or Apache Flink
+* Kinesis Video streams: capture, process and store video streams
+
+**Amazon Kinesis Data streams**
+
+* Made of multiple shards
+* Produces produce a Record
+    * Partition key -> Determine which shard will the record go to
+    * Data blob -> Value itself
+* Send records at a speed of 1MB/sec or 1000 msg/sec per shard
+
+* Consumes a record
+    * Partition key
+    * Sequence no.
+    * Data blob
+    * 2MB/sec (shared) per shard all consumers or 2MB/sec (enhanced) per shard per consumer
+
+* Retention between 1 to 365 days
+* Ability to reprocess data (replay)
+* Once data is inserted in Kinesis, it can't be deleted (immutability)
+* Data that shares the same partition goes to the same shard (ordering)
+* Producers: AWS SKD, Kinesis produces Library, Kinesis Agent
+* Consumers:
+    * Write your own: Kinesis Client Library, AWS SDK
+    * Managed: AWS Lambda, Kinesis Data Firehose, Kinesis Data Analytics
+
+**Amazon Kinesis Capacity modes**
+
+* Provisioned mode:
+    * You choose the number of shards provisioned, scale manually or using API
+    * Each shard gets 1MB/s in (or 1000 records per second)
+    * Each shard gets 2MB/s out (classic or enhanced fan-out consumer)
+    * You pay per shard provisioned per hour
+* On-demand mode:
+    * No need to provision or manage the capacity
+    * Default Capacity provisioned (4 MB/s in or 4000 records per second)
+    * Scales automatically based on observer throughput peak during the last 30 days
+    * Pay per stream per hour & data in/out per GB
+
+**Amazon Kinesis Data streams security**
+
+* control access / authorization using IAM policies
+* Encryption in flight using HTTPS endpoints
+* Encryption at rest using KMS
+* You can implement encryption/decryption of data on client side (harder)
+* VPC endpoints available for kinesis to access within VPC
+* Monitor API calls using CloudTrail
+
+**Amazon Kinesis Producers**
+
+* Puts data records into data streams
+* Data record consists of:
+    * Sequence number (unique per partition-key within shard)
+    * Partition key (must specify while put records into stream)
+    * Data blob (up to 1 MB)
+* Producers:
+    * AWS SDK: simple producer
+    * Kinesis producer library (KPL): C++, Java, batch, compression, retries
+    * Kinesis Agent: monitor log files
+* Write throughput: 1MB/Sec or 1000 records/sec per shard
+* PutRecord API (API to send data into Kinesis)
+* Use batching with PutRecords API to reduce costs & increase throughput
+
+    ___Accessing Mapping values___
+
+    ProvisionedThroughputExceeded happens when we exceed either 1 MB/sec or 1000 records/sec per shard
+
+    Solution:
+    * Use highly distributed partition key
+    * Retries with exponential backoff
+    * Increase shards (scaling) -> shard splitting
+
+
+**Amazon Kinesis Consumers**
+
+Get data records from data streams and process them
+
+* AWS Lambda
+* Kinesis Data Analytics
+* Kinessi Data Firehose
+* Custom consumer (AWS SDK) -- Classic or Enhanced Fan-Out
+* Kinesis Client Library (KCL): library to simplify reading from data stream
+
+    ___Custom Consumer Shared(Classic) Fan-Out Consumer - pull___
+
+    * Low number of consuming applications
+    * Read throughput 2MB/sec per shard across all consumers (if we have 6 consumers then 2/6 MB is the ammount per consumer)
+    * Max 5 GerRecords API calls/sec
+    * Latency ~200ms
+    * Minimal cost
+    * Consumers poll data from Kinesis using GetRecords API call
+    * Returns up to 10 MB (then throttle for 5 seconds) or up to 10000 records
+
+    ___Custom Consumer Enhanced Fan-Out Consumer - push___
+
+    * Multiple consuming applications for the same stream
+    * 2 MB/sec per consumer per shard
+    * Latency ~70ms
+    * Higher cost
+    * Kinesis pushes data to consumers over HTTP/2 (Subscribe to Shard API)
+    * Soft limit of 5 consumer applications (KCL) per data stream (default), can be increased by putting a ticket into AWS
+
+    ___Custom Consumer AWS Lambda___
+
+    * Supports classic and Enhanced fan-out consumers
+    * Read records in batches
+    * Can configure batch size and batch window
+    * If error occurs, Lambda retries until succeeds or data expired
+    * Can process up to 10 batches per shard simultaneously
+
+
+**Amazon Kinesis Client Library**
+
+* Java library that helps record from a Kinesis data stream with distributed application sharing the read workload
+* Each shard is to be read by only one KCL instance
+    * 4 shards = max 4 KCL instances
+    * 6 shards = max 6 KCL instances
+
+* Progress is checkpointed into DynamoDB (needs IAM access)
+* Track other workers and share the work amongs shards using DynamoDB
+* KCL can run on EC2, Elastic Beanstalk and on-premises
+* Records are read in order at the shard level
+* Versions:
+    * KCL 1.x (supports shared consumer)
+    * KCL 2.x (supports ahred and enhanced fan-out consumer)
+
+**Amazon Kinesis Operations**
+
+* Following kinesis operations_
+
+    ___Shard Splitting___
+
+    * Used to increase the stream capacity (1MB/s data in per shard)
+    * Used to divide a "hot shard"
+    * The old shard is closed and will be deleted once the data is expired
+    * No automating scaling (manually increase/decrease capacity)
+    * Can't split into more than two shards in a single operation
+
+    ___Merging Shards___
+
+    * Decrease the stram capacity and save costs
+    * Can be used to group two shards with low traffic (cold shards)
+    * Old shards are closed and will be deleted once the data is expired
+    * Can't merge more than two shards in a single operation
+
+
+**Amazon Kinesis Data Firehose**
+
+Fully managed service, no administration, automating scaling, serverless
+
+* Pay for data going through Firehouse
+* Near Real time
+    * 60 seconds latency minimum for non full batches
+    * Or minimum 1 MB of data at a time
+
+* Supports many data formats, conversions, tranformations, compression
+* Supports custom data transformations using AWS Lambda
+* Can send failed or all data to a backup S3 bucket
+* Custom destination using HTTP Endpoints
+
+Destinations of data firehose
+* Amazon S3
+* Amazon Redshift (Copy through S3) From S3 to redshift
+* Amazon OpenSearch
+
+Can also send to 3rd party partners
+* MongoDB
+* Datadog
+* Splunk
+
+* Custom destination using HTTP Endpoints
+
+
+* Does not have data storage like AWS Kinesis data streams
+* Automatic scaling
+* Does not support replay capability
+
+**Amazon Kinesis Data Analytics for SQL applications**
+
+Real-time analytics on Kinesis Data Streams & firehose using SQL
+
+* Add reference data from Amazon S3 to ernich streaming data
+* Fully managed, no servers to provision
+* Automatic scaling
+* Pay for actual consumption rate
+* Output:
+    * Kinesis data streams: create streams out of the real-time analytics queries
+    * Kinesis data firehose: send analytics query results to destinations
+
+Sources
+* Kinesis data streams
+* Kinesis data firehose
+
+Destinations
+* Kinesis data streams
+* Kinesis data firehose
+
+
+**Amazon Kinesis Data Analytics for Flink**
+
+Renamed to Amazon managed service for apache flink
+
+Read from
+* Kinesis data streams
+* Amazon MSK
+
+* Use flink to process and analyze streaming data
+* Run it on managed cluster on AWS
+    * provisioning compute resources, parallel computation, automatic scaling
+    * application backups
+    * Use any apache Flink programming features
+    * Flink does not read from firehose (use Kinesis Analytics for SQL instead)
+
+
+# ~~~~ AWS Monitoring and Audit, Cloudwatch, X-ray and CloudTrail ~~~~
+
+**AWS Cloudwatch Metrics**
+
+* Provides metrics for every service in AWS
+* Metric is variable to monitor (cpu utilization, Networking, etc ...)
+* Metrics belong to namespaces
+* Dimension is an attribute of a metric (instance id, environment, etc...)
+* Up to 30 dimensions per metric
+* Metrics have timestamps
+* Can create CloudWatch dashboards from metrics
+
+    ___EC2 detailed monitoring___
+
+    * EC2 instance metrics have metrics every 5 minutes
+    * With detailed monitoring you can get data every 1 minute (for a cost)
+    * Use datailed monitoring if you want tos cale faster for your ASG
+    * AWS free tier allos us to have 10 detailed monitoring metrics
+    * EC2 memory usage is by default not pushed (must be pushed from inside the instance as a custom metric)
+
+**AWS Cloudwatch custom Metrics**
+
+* Possibility to define and send your own custom metrics to CloudWatch
+* Example: memory (RAM) usage, disk space, number of logged in users...
+* Use API call PutMetricData
+* Ability to use dimentions (attributes) to segment metrics
+    * insence.id
+    * Environment.name
+* Metric resoluton (StorageResolution API parameter - two possible value):
+    * Standard: 1 minute
+    * Higher resolution: 1/5/10/30 seconds - Higher cost
+* Important: Accepts metric data points two weeks in the past and two hours in the future (make sure to configure your EC2 instance time correctly)
+* No errors will be triggered from Cloudwatch from past or future hours
+
+**AWS Cloudwatch Logs**
+
+* Log groups: arbitrary name, usually representing an application
+* Log stream: instances within application / log files / containers
+* Can define log expiration policies (never expire, 1 day to 10 years)
+
+* CloudWatch can send logs to:
+    * Amazon S3 (exports)
+    * Kinesis data streams
+    * Kinesis data firehose
+    * AWS Lambda
+    * OpenSearch
+
+* Logs are encrypted by default
+* Can setup KMS-based encryption with your own keys
+
+Sources:
+* SDK, Cloudwatch logs agent, cloudwatch unified agent
+* Elasticbeanstalk: collection of logs from application
+* ECS: collection from containers
+* AWS lambda: collection from function logs
+* VPC flow logs: VPC specific logs
+* API Gateway
+* CloudTrail based on filter
+* Route53: Log DNS queries
+
+
+* Log data can take up to 12 hours to become available to export
+* The API call is CreateExportTask
+* Not near-real time or real-time, use log suscriptions instead
+
+    ___Cloudwatch log insights___
+
+    * Search and analye log data store in cloudwatch logs
+    * Provides a purpose built query language
+        * Automatically discovers fields from AWS services and JSON log events
+        * Fetch desired event fields, filter based on conditions, calculate aggregate statistics, sort events, limit number of events
+        * Can save queries and add them to CloudWatch Dashboards
+    * Can query multiple log groups in different AWS accounts
+    * its a query engine, not a real-time engine
+
+    ___Cloudwatch log subscriptions___
+
+    * Get a a real-time log events from CloudWatch logs for processing and analysis
+    * Send to Kinesis Data Srtams, Firehose or lambda
+    * Suscription filter - filter which logs are events delivered to your destination
+
+
+**AWS Cloudwatch Logs For EC2**
+
+* By default no logs from EC22 will go to Cloud Watch
+* Need to run a Cloudwatch agent on EC2 to push the log files you want
+* Make sure IAM permissions are correct
+* The cloudwatch log agent acn be setup on-premises too
+
+    ___Cloudwatch log agent___
+    * Old version of the agent
+    * Can only send to Cloudwatch logs
+
+    ___Cloudwatch  unified agent___
+    * Collect additional system-level metrics such as RAM, processes, etc...
+    * Collect logs to send to CloudWatch logs
+    * Centralized configuration using SSM parameter store
+
+    * CPU (active, guest, idle, system, user, steal)
+    * Disk metrics (free, used, total), Disk IO (writes, reads, bytes, iops)
+    * RAM (free, inactive, used, total, cached)
+    * Netstat ( number of TCP and UDP connections, net packets, bytes)
+    * Processes (total, dead, bloqued, idle, running, sleep)
+    * Swap space (free, used, used %)
+
+    * Reminder: out-of-the box metrics for EC2 - disk, CPU, network (high level)
+
+
+**AWS Cloudwatch Logs Metric filter**
+
+* Cloudwatch logs can use filter expressions
+    * Can be used to trigger alarms
+* Filters do not retroactively filter data, Filters only publish the metric data points for events that happen after the filter was created
+* Ability to specify up to 3 dimensions for the metric filter
+
+**AWS Cloudwatch Alarms**
+
+* Alarms are used to trigger notifications for any metric
+* Various options (sampling, %, max, min, etc...)
+* Alarm states:
+    * OK
+    * INSUFFICIENT_DATA
+    * ALARM
+* Period:
+    * Length of time in seconds to evaluate
+    * High resolutuon custom metrics: 10, 30, 60 secs
+
+    ___Alarm targets___
+    * Stop,terminate, reboot and recover an EC2 instance
+    * Trigger auto scaling action
+    * Send notifications to SNS (from which you can do pretty much anything)
+
+___Composite Alarms___
+
+* Cloudwatch alarms are on a single metric
+* Composite alarms are monitoring the states of multiple other alarms
+* AND OR conditions
+* Helpful to reduce "alarm noise" by creating complex composite alarms
+
+___EC2 instance recovery___
+
+* Status check:
+    * Instance status = check the EC2 VM
+    * System status = check the underlying hardware
+* Recovery: Same private public elastic IP, metadata, placement group
+
+
+**AWS Cloudwatch Synthetics canary**
+
+* Configurable script that monitor your APIs, URLs, websites
+* Reproduce what your customers do programmatically to find issues before customers are impacted
+* Checks the availability and latency of your endpoints and can store load time data and screenshots of the UI
+* Integration with CloudWatch Alarms
+* Scripts written in Node.js or Python
+* Programmatic access to a hheadless google chrome browser
+* Can run once or on a regular schedule
+
+Blueprints:
+* Heartbeat Monitor - load URL, store screenshot and an HTTP archive file
+* API Canary - test basic read and write functions of REST APIs
+* Broken link Checker - check all links inside the URL you are testing
+* Visual Monitoring - compare a screenshot taken during a canary run with a baseline screenshot
+* Canary recorder - used with clouwatch synthetics recorder (record your actions on a website and automatically generates a script for that)
+* GUI workflow builder - verifies that actions can be taken like a login form
+
+**AWS Cloudwatch Event Bridge**
+
+* Schedule: Cron jobs (scheduled scripts)
+* Event pattern: Event rules to react to a service doing something
+    * Sign In event -> SNS notification
+* Trigger lambda functions, send SQS/SNS messages...
+
+Sources:
+* EC2 instance: start instance
+* CodeBuild: Failed build
+* S3: upload object
+* Schedule: Cron every 4 hours
+* ...
+
+Destinations:
+* Lambdas
+* AWS Batch
+* ECS task
+* SQS
+* SNS
+* Kinesis data streams
+* Codebuild
+* ...
+
+Previous example is the Default Event Bus, however, event bridge has something called "Partner event bus", therefore we can react to changes happening outside AWS from these SAAS partners.
+
+Custom Event bus also applies here which are notifications from custom applications.
+
+* Event buses can be accessed by other AWS accounts using Resource-based poilicies
+* You can archive events(all/filter) sent to an event bus (indefinitely or set period)
+* Ability to replay archived events
+
+
+___EventBridge Schema registry___
+
+* EventBridge can analyze the events in your bus and infer the schema
+* The Schema Registry allows you to generate code for your application that will know in advace how data is structured in the event bus
+* Schema can be versioned
+
+___EventBridge Resource-based policy___
+* Manage permissions for a specific Event Bus
+* Example: allow/deny events from another AWS account or AWS region
+* Use case: aggregate all events from your AWS organization in a single AWS account or AWS region
+
+**AWS X-Ray**
+
+Visual analysis for our applications
+
+* AWS Lambda
+* Elastic Beanstalk
+* ECS
+* ELB
+* API Gateway
+* EC2 instances or any application server
+
+X-Ray leverages tracing
+* Tracing is an end to end way to follow a request
+* Each component dealing with the request adds its own trace
+* Tracing is made of segments
+* Annotations can be added to traces to provide extra-information
+* Ability to trace:
+    * Every request
+    * Sample request (as a % for example or a rate per minute)
+* X-Ray security:
+    * IAM for authorization
+    * KMS for encryption at rest
+
+How to enable?
+
+1. Must import the AWS X-Ray SDK
+    * Very little code modification needed
+    * The application SDK will then capture
+        * Calls to AWS services
+        * HTTP/HTTPS requests
+        * Database calls
+        * Queue calls (SQS)
+2. Install the X-Ray daemon or enable X-Ray AWS integration
+    * X-Ray daemon works as a low level UDP packet interceptor
+    * AWS Lambda /other AWS services already run the X-Ray daemon
+    * Each application must have the IAM rights to write data to X-Ray
+
+AWS X-Ray Troubleshooting
+* If X-Ray is not working on EC2
+    * Ensure the EC2 IAM Role has the proper permissions
+    * Ensure the EC2 instance is running the X-Ray daemon
+* To enable on AWS Lambda:
+    * Ensure it has an IAM execution role with proper policy
+    * Ensure X-Ray is imported in the code
+    * Enable Lambda X-Ray active tracing
+
+**AWS X-Ray instrumentation**
+
+Means the measure of product's performance, diagnos errors, and to write trace information
+* To instrument your application code you use X-Ray SDK
+
+**AWS X-Ray Concepts**
+
+* Segments: each application / service will send them
+* Subsegments: if you need more details in your segment
+* Trace: segments collected together to form an end to end trace
+* Sampling: decrease the amount of requests sent to X-Ray to reduce cost
+* Annotations: Key value pairs used to index and use with filters
+* Metadata: Key value pair, not indexed, not used for searching
+
+* The X-Ray daemong / agent has a config to send traces cross account:
+    * make sure the IAM permissions are correct - the agent will assume the role
+    * This allows to have central account for all your application tracing
+
+**AWS X-Ray Sampling rules**
+
+* With sampling rules, you control the amount of data that you record
+* You can modify sampling rules without chaning your code
+
+* By default the X-Ray SDK records the first request each second, and five percent of any additional requests
+* One requests per second is the reservoir which ensures that at least one trace is recorded each second as long as the service is serving requests
+
+* Five percent is the rate at which additional requests beyond the reservoir size are sampled
+
+**AWS X-Ray APIs used by daemon**
+
+* PutTraceSegments
+* PutTelemetryRecords
+* GetSamplingRules
+
+* GetServiceGraph
+* BatchGetTraces
+* GetTraceSummaries
+* GetTraceGraph
+
+**AWS X-Ray ECS**
+
+In order to connect to X-Ray from ECS we need to map the port 0 to 2000 and then add the environment variable "AWS_XRAY_DAEMON_ADDRESS" with the value of the name , in this case "xray-daemon:2000" and lastly we need to link the application to it.
+```json
+{
+    "portMappings" : [
+        "hostPort": 0,
+        "containerPort": 2000,
+        "protocol": "udp"
+    ],
+
+    "links": [
+        "xray-daemon"
+    ]
+}
+```
+
+**AWS Distro for OpenTelemetry**
+
+* Secure, production ready AWS-supported distribution of the open source project open telemetry
+* Provides a single set of APIs, libraries, agents and collector services
+* Collects distributed traces and metrics from your apps
+* Collects metadata from your AWS resources and services
+* Collects traces without changing code
+* Send traces and metrics to multiple AWS services and partner solutions
+* Migrate from X-Ray to AWS Distro for telemetry if you want to standardize with open-source APIs from telemetry or send traces to multiple destinations simultaneously
+
+
+**AWS Cloud Trail**
+
+* Provides governance, compliance and audit for AWS account
+* CloudTrail is enabled by default
+* Get history of events / API calls made within the AWS account
+    * Console
+    * SDK
+    * CLI
+    * AWS services
+
+* Can put logs from CloudTrail into CloudWatch logs or S3
+* Can be applied to all regions or single region
+* If a resource is deleted, check cloud trail
+
 
 ** _TCP is layer 4_.
 
