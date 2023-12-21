@@ -2681,6 +2681,18 @@ In order to connect to X-Ray from ECS we need to map the port 0 to 2000 and then
 * Can be applied to all regions or single region
 * If a resource is deleted, check cloud trail
 
+# ~~~~ AWS Serverless ~~~~
+
+* AWS Lambda
+* DynamoDB
+* AWS Cognito
+* AWS API Gateway
+* AWS S3
+* AWS SNS & SQS
+* AWS Kinesis Data Firehose
+* Aurora serverless
+* Step functions
+* Fargate
 
 ** _TCP is layer 4_.
 
