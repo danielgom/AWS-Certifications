@@ -2694,6 +2694,469 @@ In order to connect to X-Ray from ECS we need to map the port 0 to 2000 and then
 * Step functions
 * Fargate
 
+**AWS Lambda**
+
+* Virtual functions - no servers to manage
+* Limited by time - short executions
+* Run on demand
+* Scaling is automated
+
+* Can get resources per functions up to 10 GB of RAM
+* Increasing RAM will also improve CPU and network
+
+__Prefer fargate over running lambda container__
+
+Pricing
+* Pay per calls:
+    * First 1,000,000 requests are free
+    * $0.20 per 1 million requests thereafter
+* Pay per duration: (increment of 1 ms)
+    * 400,000 GB-seconds of compute time per month if Free
+    * == 400,000 seconds if function is 1 GB RAM
+    * == 3,200,000 seconds if function is 128 GB RAM
+
+Lambdas can be integrated with ALB through a target group
+
+* ALB can support multi header values via target group
+* HTTP headers and query string parameters that are sent with multiple values are shown as arrays within the AWS Lambda event and response objects
+
+```json
+"queryStringParameters: {"name": ["foo", "bar"]}"
+```
+
+**AWS Lambda Asynchronous Invocations**
+
+* S3, SNS, Cloudwatch Events, Event bridge, CodeCommit, Code Pipeline, IoT events, etc...
+* Events are placed in an Event Queue
+* Lambda attempts to retry on errors
+    * 3 tries total
+    * 1 minute wait after 1st fail, then 2 minutes wait
+* If function is retried, duplicate entries will be seen in CloudWatch logs
+* Can define a DLQ for failed processing (needs IAM permissions)
+* Asynchronous invocations allows to speed up the processing if there is no need to wait for the result
+* Event bridge can create rules (like a CronJob) and invoke Lambda every few minutes/hours
+
+**AWS Lambda with S3 Events Notifications**
+
+* S3:ObjectCreated, S3:ObjectRemoved, S3:ObjectRestore, S3:Replication
+* Object name filtering possible (*.jpg)
+* S3 event notifications typically deliver events in seconds but can sometimes take a minute or longer
+* If two write are made to a single non-versioned object at the same time, it is possible that only a single event notification will be sent
+* If you want to ensure that an event notification is sent for every successful write, you can enable versioning on your bucket
+
+
+**AWS Lambda event source mapping**
+
+* Kinesis data streams
+* SQS & SQS FIFO queue
+* DynamoDB streams
+
+* Common denominator: records need to be polled from the source
+* Lambda function is invoced synchronously
+
+
+___Streams and Lambda (Kinesis & DynamoDB)___
+
+* Event source mapping creates an iterator for each shard and process items in order
+* Start with the new items, from the beginnion or from timestamp
+* Processed items aren't removed from the stream (other consumers can read them)
+* Low traffic: use batch window to accumulate records before processing
+* High traffic: Process multiple batches in parallel
+    * Up to 10 batches per shard
+    * in-order processing is still guaranteed for each partition key
+
+* By default, if function returns an error, the entire batch is reprocessed until function succeeds or the items in the batch expire
+* To ensure in-order processing, processing for the affected shard is paused until error is resolved
+* Can configure the event source mapping to
+    * discard old events
+    * restrict number of retries
+    * split the batch on error (to work around Lambda timeout issues)
+
+___SQS and SQS FIFO___
+
+* Event source mapping will poll SQS, long polling
+* Specify batch size (1-10 messages)
+* Recommended: Set the queue visibility timeout to 6x the timeout of the lambda function
+* To use a DLQ:
+    * setup on the SQS queue not Lambda (DLQ for lambda is only for Async)
+    * or use lambda destination for failures
+
+
+Lambda supports in-order processing for FIFO queues sacaling up to the number of active message groups.
+For standard queues, items aren't necessarily processed in order.
+Lambda scales up to process a standard queue as quicky as possible and can add 60 more instances per minute to scale up.
+
+Ocassionally, the event source mapping might receive the same item from the queue twice, even if no function error occurred, lambda deletes items from the queue after they are processed successfully
+
+
+**AWS Lambda event and context objects**
+
+In the Lambda handler we have the event and context objects which contain information about the event and the lambda context
+
+* Event Object
+    * JSON formatted document contans data for the function to process
+    * Contains information from the invoking service
+    * Lambda runtime convertts the event to an object
+    * Example: input arguments, invoking service arguments...
+
+* Context Object:
+    * Provides methods and properties that provide information about the invocation function, and runtime environment
+    * Passed to the function by Lambda at runtime
+    * Example: aws_request_id, function_name, memory_limit...
+
+
+**AWS Lambda Destinations**
+
+Can configure to send result to a destination
+
+* Async invocations - can define destinations for successful and failed event:
+    * SQS
+    * SNS
+    * Lambda
+    * EventBridge bus
+
+* AWS recommends to use destinations instead of DLQ (but both can be used at the same time)
+* Event Source Mapping: for discarded event batches
+    * SQS
+    * SNS
+
+**AWS Lambda permission, IAM roles and policies**
+
+Grants the lambda function permissions to AWS services / resources
+
+* Sample managed policies for Lambda:
+    * AWSLambdaBasicExecutionRole - Upload Logs to CloudWatch
+    * AWSLambdaKinesisExecutionRole - Read from kinesis
+    * AWSLambdaDynamoExecutionRole - Read from DynamoDB streams
+    * AWSLambdaSQSQueueExecutionRole - Read from SQS
+    * AWSLambdaVPCAccessExecutionRole - Read from lambda funcion in VPC
+    * AWSLambdaXRayDaemonWriteAccess - Upload trace data to X-Ray
+
+* Best practice: create one Lambda Execution Role per function
+
+___Lambda Resource Based Policies___
+
+* Use resource-based policies to give other accounts and AWS services permission to use your lambda resources
+* Similar to S3 bucket policies for S3 bucket
+* An IAM principal can access lambda:
+    * If the IAM policy attached to the principal authorizes it
+    * Or if the resource-based policy authorizes (e.g. service access)
+
+* When an AWS service like S3 calls lambda functions, resource-based policy gives it access
+
+**AWS Lambda Environment variables**
+
+Key value pairs in string form, all environment variables are available to the code and Lambda service adds its own environment variables as well
+
+* Helpful to store secrets (encrypted by KMS)
+* Secrets can be encrypted by the Lambda service key, or your own CMK
+
+**AWS Lambda Logging and Monitoring**
+
+CloudWatch Logs:
+* AWS Lambda execution logs are stored in CloudWatch Logs
+* Make sure your AWS lambda function has an execution role with an IAM policy that authorizes writes to CloudWatch Logs
+
+CloudWatch Metrics:
+
+* AWS Lambda metrics are displayed in AWS CloudWatch Metrics
+* Invocations, Durations, Concurrent executions
+* Error count, success rates, Throttles
+* Async Delivery failures
+* Iterator Age (Kinesis & DynamoDB streams)
+
+___Lambda Tracing with X-Ray___
+
+* Enable in lambda configuration
+* Runs the X-Ray daemon by default
+* Use AWS X-Ray sdk in code
+* Ensure lambda function has correct IAM execution role
+    * AWSXRayDaemonWriteAccess
+* Environment variables to communicate with X-Ray
+    * _X_AMZ_TRACE_ID: contains the tracing header
+    * AWS_XRAY_CONTEXT_MISSING: by default, LOG_ERROR
+    * AWS_XRAY_DAEMON_ADDRESS: the X-Ray- Daemon IP_ADDRESS
+
+**AWS Lambda CloudFront Functions & Lambda@Edge**
+
+* Website security and privace
+* Search engine optimization
+* Bot mitigation at the edge
+* Real time image transformation
+* A/B testing
+* User prioritization
+* User Authentication and Authorization
+* Intelligently route accross origins and data centers
+
+___CloudFront functions___
+
+* Lightweight function written in JS
+* Millins of requests per second
+* High scale and latency sensitive CDN
+* Used to change viewer requests and responses
+* Native feature of CloudFront
+
+Use cases
+* Cache key normalization
+* Header manipulation
+* URL rewrites or redirects
+* Request authentication & authorization
+
+___Lambda@Edge___
+
+* LambdaFunctions written in NodeJS or Python
+* Thousand of requests per second
+* Author functions in one AWS region, then CloudFront replicates to its locations
+
+Use cases
+* Longer execution time (several ms)
+* Adjustable CPU or memory
+* Network access to use external services for processing
+* File system access or access to the body of HTTP requests
+
+**AWS Lambda in VPC**
+
+* By default, lambda function is launched outside our own VPC (in an AWS-owned VPC)
+* Therefore it cannot access resources in our VPC
+
+To connect to VPC
+* Define the VPC ID, the subnests and teh security groups
+* Lambda will create an ENI (Elastic network interface) in our subnets
+* AWSLambdaVPCAccessExecutionRole
+
+
+* Lambda functions in our VPC do not have internet access
+* Deploying a lambda function in a public subnet does not give it internet access
+* Deploying a lambda function in a private subnet gives it internet access if we have a NAT gateway/instance
+* We can use VPC endpoints to privately access AWS services without a NAT
+
+
+**AWS Lambda Function Configuration**
+
+* RAM:
+    * From 128MB to 10GB in 1MB increments
+    * The more RAM is added, the more vCPU we get
+    * At 1792 MB a function has the equivalent of one full vCPU, after that we get more than 1 vCPU
+    * If the application is CPU-Bound (computation heavy), we increase RAM
+
+    * Timeout: default 3 seconds, max 900 seconds -> 15 minutes
+
+___Execution Context___
+
+Temporary runtime environment that initializes any eternal dependencies in our lambda code
+
+* Great for connections, HTTP clients, SDK clients
+* Is maintained for some time in anticipation of another lambda function invocation
+* The next invocastion can "re-use" the context to execution time and save time in initializing connection objects
+* Includes /tmp directory
+    * Use if we need to download a big file to work
+    * If we need disk space to perform operations
+    * Max size is 10GB
+    * Remains when the execution context is frozen, providing transient cache that can eb used for multiple invocations
+    * For permanent persistence of objects (not temporary), we use S3
+
+**AWS Lambda Layers**
+
+* Custom runtimes for non-supported languages (community driven)
+    * Ex: C++ https://github.com/awslabs/aws-lambda-cpp
+* Externalize dependencies to re-use them with layers
+
+Can send events to DQL directly from SQS
+
+**AWS Lambda File system mounting**
+
+* Lambda functions can access EFS file systems if they are running in a VPC
+* Configure lambda to mount EFS file systems to local directory during initialization
+* Must leverage EFS Access points
+* Limitations: one function instance = one connection to EFS, can hit connection burst limits of EFS if many functions come up at a single time
+
+**AWS Lambda concurrency and Throttling**
+
+* Concurrency limit: up to 1000 concurrent executions of a lambda by account
+* Can set a "reserved concurrency" at function level (=limit)
+* Each invocation over the concurrency limit will trigger a "Throttle"
+* Throttle behaviour:
+    * if sync invocation => return ThrottleError -429
+    * if async invocation => retry automatically and then go to DLQ
+* If higher limit is needed, open support ticket
+
+
+___Async Invocations___
+
+* If function does not have enough concurrency available to process all events, additional requesta are throttled
+* For throttling errors 429, and system errors 500, lambda returns the event to the queue and attempts to run the function again for up to 6 hours
+* The retry interval increases exponentially from 1 second after the first attempt to a maximum of 5 minutes
+
+___Cold Starts & Provisioned Concurrency___
+
+* Cold start:
+    * New instance => code is loaded and code outside the handler run
+    * if the init is large, this process can take some time
+    * First request served by new instances has higher latency than the rest
+* Provisioned concurrency:
+    * Concurrency is allocated before the function is invoked (in advance)
+    * Cold start never happens and all invocations have low latency
+    * Application auto scalling can manage concurrency (schedule or target utilization)
+
+**AWS Labmda Function Dependencies**
+
+* If lambda function depends on external libraries, SDK, database clients, etc
+* We would need to install the packages alongside the code and zip it together
+    * Python -> use pip --target
+    * NodeJS -> use npn & node_modules
+    * and so on...
+
+* Upload the zip straight to Lambda if less than 50 MB, else to S3 first
+* Native libraries work: they need to be compiled on Amazon linux first
+* AWS SDK comes by default with every lambda function
+
+**AWS Lambda and CloudFormation**
+
+We can upload a lambda function via CloudFormation
+
+___Inline___
+* Inline functions are very simple
+* Use the Code.ZipFile property
+* You cannot include function dependencies with inline functions
+
+
+___S3___
+* Must store lambda zip in S3
+* Must refer the S3 zip location in the CloudFormation code
+    * S3 Bucket
+    * S3Key: full path to zip
+    * S3ObjectVersion: if versioned bucket
+* If you update the code in S3, but don't update S3Bucket, S3Key or S3objectversion, cloud formation won't update the function
+
+**Lambda Container Images**
+
+It is a good option/alternative to compiling dependencies in lambda layers
+
+* Deploy lambda function as container images of up to 10 GB from ECR
+* Pack complex dependencies, large dependencies in a container
+* Base images are available for multiple languages
+* Can create our own image as long as it implements the lambda runtime API
+* Test the containers locally using the lambda runtime interface emulator
+* Unified workflow to build apps
+
+___Best Practices___
+
+* Use AWS-provided base images
+* Use Multi-Stage builds (in order to make light images)
+* Use single repository for functions with large layers
+* Can use them to upload large lambda functions (Up to 10GB)
+
+**Lambda Versions and Aliases**
+
+* When we work on a lambda function, we work on $LATESTS
+* When we are ready to publish a lambda function, we create a version
+* Versions are immutable
+* Versions hace increasing version numbers
+* Versions get their own ARN (Amazon Resource Name)
+* Version = code + configuration (nothing can be changed - immutable)
+* Each version of the lambda function can be accessed
+
+___Aliases___
+
+* Aliases are ust pointers to lambda function versions
+* We can define a dev, test, prod alias and have them point at different lambda versions
+* Aliases are mutable
+* Aliases enable canary deployment by assigning weights to lambda functions
+* Aliases enable stable configuration of our event triggers / destinations
+* Aliases have their own ARNs
+* Aliases cannot reference aliases
+
+* We can divide traffic, e.g. -> 95% to prod alias and 5% to dev alias for example
+
+**Lambda CodeDeploy**
+
+* Code edploy can help to automate traffic shift for lambda aliases
+* Feature is integrated within the SAM framework
+
+CodeDeploy strategies
+* Linear: grow traffic every N minutes until 100%
+    * Linear10PercentEvery3Minutes
+    * Linear10PercentEvery10Minutes
+* Canary: try X percent then 100%
+    * Canary10Percent5Minutes
+    * Canary10Percent30Minutes
+* AllAtOnce: immediate
+
+* Can create pre & post traffic hookts to check the health of the lambda functions
+
+Requirements in CodeDeploy AppSpec.yml
+
+* Name -> required - the name of the lambda function to deploy
+* Alias -> required - the name of the alias to the lambda function
+* CurrentVersion -> required - the version of the lambda function traffic currently points to
+* TargetVersion -> required - the version of the lambda function traffic is shifted to
+
+**Lambda Function URL**
+
+* Dedicated HTTPs endpoint for your lambda function
+* A unique URL endpoint is generated, never changes
+* Invoke via web browser, curl, postman or any HTTP client
+* Access function URL through public internet only
+* Supports Resource-based policies & CORS configurations
+* Can be applied to any function alias or to $LATEST, cannot be applied to ther function versions
+
+___Security___
+
+* Resource based policy
+    * Authorize other accounts / specific CIDR / IAM principals
+* Cross origin Resource sharing (CORS)
+    * if you call your lambda function from a different domain
+
+* AuthType NONE - allow public and unauthenticated access
+    * Resource-based policy is always in effect (must grant public access)
+
+* AuthType AWS_IAM - IAM is used to authenticate and authorize requests
+    * Both principal's identity-based policy and resource based policy are evaluated
+    * Principal must have lambda:InvokeFunctionUrl permissions
+    * Same account - identity-based policy OR resource based policy as allow
+    * Cross account - identity based policy AND resource based policy as allow
+
+
+**Lambda and CodeGuru profiling**
+
+* Gain insights into runtime performance of lambda functions using CodeGuru profiler
+* CodeGuru creates a profiler group for the lambda function
+* Supported for java and python runtimes
+* Activate from AWS Lambda console
+* When activated, lambda adds:
+    * CodeGuru profiler layer to the function
+    * Environment variables to the function
+    * AmazonCodeGuruProfilerAgentAcess polici to the function
+
+**Lambda Limits**
+
+* Execution:
+    * Memory allocation: 128mb - 10GB
+    * Maximum execution time: 900 seconds (15 minutes)
+    * Environment variables: 4kb
+    * Disk capacity in the function container (/tmp): 512MB to 10GB
+    * Concurrency executions: 1000, can be increased
+* Deployment:
+    * Lambda function deployment size (compressed .zip): 50MB
+    * Size of uncompressed deployment (code + depdendencies): 250 MB
+    * Can use the /tmp directory to load other files at startup
+    * Size of environment variables: 4kb
+
+**Lambda Best Practices**
+
+* Perform heavy-duty work outside functin handler:
+    * Connect to databases outside function handler
+    * Initialize the AWS SDK outside function handler
+    * Pull depdendencies or datasets outside function handler
+* Environment variables for:
+    * Database connection strings, S3 bucket, etc
+    * Passowords, sensitive values etc
+* Minimize deployment package size to runtime necessities:
+    * Breakdown function if needed
+    * Remember lambda limits
+    * Use layers where necessary
+* Do not use recursive code, never have a function to call itself
+
 ** _TCP is layer 4_.
 
 ** _HTTP and HTTPS are layer 7_
