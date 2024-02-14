@@ -2684,7 +2684,7 @@ In order to connect to X-Ray from ECS we need to map the port 0 to 2000 and then
 # ~~~~ AWS Serverless ~~~~
 
 * AWS Lambda
-* DynamoDB
+* AWS DynamoDB
 * AWS Cognito
 * AWS API Gateway
 * AWS S3
@@ -2752,7 +2752,7 @@ Lambdas can be integrated with ALB through a target group
 * DynamoDB streams
 
 * Common denominator: records need to be polled from the source
-* Lambda function is invoced synchronously
+* Lambda function is invoked synchronously
 
 
 ___Streams and Lambda (Kinesis & DynamoDB)___
@@ -3156,6 +3156,663 @@ ___Security___
     * Remember lambda limits
     * Use layers where necessary
 * Do not use recursive code, never have a function to call itself
+
+
+# ~~~~ AWS DynamoDB ~~~~
+
+* Fully managed, highly available with replication across multiple AZs
+* NoSQL database
+* Scales to massive workloads, distributed database
+* Millions of requests per seconds, trillions of row, 100s of TB of storage
+* Fast and consisten in performance
+* Integrated with IAM for security, authorization and administration
+* Enables event driven programming with DynamoDB strams
+* Low cost and auto-scaling capabilities
+* Standar and infrequent access table class
+
+* DynamoDB is made of tables
+* Each table has a Primary key (must be decided at creation time)
+* Each table can have a infinite number of items -> rows
+* Each item has attributes and can be null
+* Maximum size on an item is 400kb
+* Data type supported are:
+    * ScalarTypes - String number, binary, boolean, null
+    * DocumentTypes - List, map
+    * SetTypes - String set, Number set, Binary set
+
+Multiple Options to choose a Primary Key
+
+* Option1: Partiton key (HASH)
+    * Partition key must be unique for each item
+    * Partition key must be "diverse" so that the data is distributed
+    * Example: "User_ID" for users table
+
+* Option2: Partiton key + Sort key (HASH + RANGE)
+    * The combination must be unique for each item
+    * Data is grouped by partition key
+    * Example: user_id + game_id, for partition key and sort key
+
+
+**DynamoDB Read & Write Capacity units**
+
+This control how table's capacity is managed
+
+* Provisioned mode (default)
+    * Specify the number of reads/writes per second
+    * Plan capacity beforehand
+    * Pay for provisioned read & write capacity units
+* On-demand mode
+    * Read/writes automatically scales up and down
+    * No capacity planning needed
+    * Pay for what we use, more expensive $$$
+
+* We can switch between modes once every 24 hours
+
+
+___Provisioned capacity mode___
+
+* Table must have provisioned read and write capacity units
+* Read capacity units RCU for reads
+* Write capacity units WCU for writes
+* Option to setup auto-scaling to meet demand
+* Throughput can be exceeded temporarily using "Burst capacity"
+* If burst capacity has been consumed , we'll get a ExceededException
+* It's then advised to do an exponential backof retry
+
+___OnDemand capacity mode___
+
+* Read and writes automatically scale up and down
+* No capacity planned
+* Unlimited RCU and WCU, no throttle, more expensive
+* Charged for reads and writes in terms of RRU and WRU
+* Read Request units RRU - same as RCU
+* Write Request units WRU - same as WCU
+* 2.5x more expensive than provisioned capacity mode
+* Use cases: unknown workloads, unpredictable application traffic...
+
+___Write capacity units___
+
+* One WCU represents one write per second for an item up to 1KB in size
+* If the items are larger than 1KB, more WCUs are consumed
+
+* Example 1: we write 10 items per second, with items size 2KB
+    * We need 10*2 = 20WCUs
+* Example 2: we write 6 items per second, with item size 4.5KB
+    * we need 6*5 = 30WCUs (4.5KB gets rounded to upperKB)
+
+___Read Capacity units___
+
+* One RCU represents one Strongly consistent read per second or two Eventually consistent reads per second for an item up to 4KB in size
+* If items are larger than 4K, mode RCUs are consumed
+
+* Example 1: 10 Strongly consistent reads per second with item size of 4KB
+    * We need 10*4/4 = 10RCUs
+* Example 2: 16 Eventually consistent reads per second with item size of 12KB
+    * We need (16/2) * (12/4) = 24 RCUs
+* Example 3: 10 Strongly consistent reads per second with item size of 6KB
+    * We need 10*8/4 = 20 RCUs (6KB gets rounded to 8KB)
+
+**DynamoDB partitions internal**
+
+* Data is stored in partitions
+* Partition keys go through a hashing algorithm to know to which partition they go to
+* WCUs and RCUs are spread evenly across partitons
+    * Example: 10 partitions, 20 WCUs and 20 RCUs
+        * Each partiton will have 2 WCUs and 2 RCUs
+
+**DynamoDB - Throttling**
+
+* If we exceed provisioned RCUs or WCUs, we get ProvisionedThroughputExceededException
+* Reasons:
+    * Hot keys - one partition key is being read too many times
+    * Hot partitions
+    * Very large items, RCU and WCU depends on size of items
+* Solutions:
+    * Exponential backoff when exception is encountered (already in SDK)
+    * Distribute partition keys as much as possible
+    * If RCU issue, we can use DynamoDB accelerator (DAX)
+
+
+**DynamoDB Writing Data**
+
+* PutItem
+    * Creates a new item or fully replace an old item (same primary key)
+    * Consumes WCUs
+* UpdateItem
+    * Edits an existing item's attributes or adds a new item if it doesn't exist
+    * Can be used to implement atomic counters - a numeric attribute that's unconditionally incremented
+* ConditionalWrites
+    * Accept a write/update/delete only if conditions are met, otherwise returns an error
+    * Helps with concurrent access to items
+    * No performance impact
+
+**DynamoDB reading data**
+
+* GetItem (1 item)
+    * Read based on primary key
+    * Primary key can be HASH or HASH+RANGE
+    * Eventually consistent read (default)
+    * Option to use strongly consistent reads (more RCU - might take longer)
+
+___Query (specific partition key and sort key)___
+
+* Query returns items based on
+    * KeyConditionExpression
+        * Partition key value (must be = operator) - required
+        * Sort key value - optional (<, >, =, between, begins with)
+    * FilterExpression
+        * Additional filtering after the query operation (before data returned)
+        * Use only with non-key attributes
+* Returns:
+    * The number of items specified in Limit
+    * Or up to 1 MB of data
+* Ability to do pagination on the results
+
+* Can query table, a local secondary index, or a global secondary index
+
+___Scan (entire table)___
+
+* Scan the entire table and then filter out data
+* Returns up to 1 MB of data - use pagination to keep on reading
+* Consumes a lot of RCU
+* Limit impact using limit or reduce the size of the result and pause
+* For faster performance, user parallel scan
+    * Multiple workers can scan multiple data segments at the same time
+    * Increases the throughput and RCU consumed
+    * Limit the impact of parallel scans just like scans
+
+* Can use ProjectionExpression and FilterExpression (no changes to RCU)
+
+**DynamoDB delete data**
+
+* DeleteItem
+    * Delete individual item
+    * Ability to perform a conditional Delete
+* DeleteTable
+    * 
+
+**DynamoDB batch operations**
+
+* Allows to save in latency by reducing the number of API calls
+* operatiosn are done in parallel for better efficiency
+* Part of a batch can fail; in which case we need to try again for the failed items
+
+* BatchWriteItem
+    * Up to 25 PutItem and or DeleteItem in one call
+    * Up to 16 MB of data written, up to 400KB of data per item
+    * Can`t update items (use UpdateItem)
+    * UnprocessedItems for failed write operations (exponential backoff or add WCU)
+
+* BatchGetItem
+    * Returns items from one or more tables
+    * up to 100 items, up to 16 MB of data
+    * Items are retrieved in parallel to minimize latency
+    * UnprocessedKeys for failed read operations (exponential backoff or add RCU)
+
+**DynamoDB PartiQL**
+
+* SQL- compatible query languages for DynamoDB
+* Allows to select,insert,update and delete data in DynamoDB using SQL
+* Run queries across multiple DynamoDB tables
+
+**DynamoDB conditional writes**
+
+* For PutItem, UpdateItem, DeleteItem and BatchWriteItem
+* Can specify as condition expression to determine which items should be modified:
+    * attribute_exits
+    * attribute_not_exits
+    * attribute_type
+    * contains for string
+    * begins_with for string
+    * ProductCategory IN (:cat1, :cat2) and Price between :low and :high
+
+**DynamoDB Indexes (GSI +LSI)**
+
+Local secondary index
+
+* Alternative sort key for the table (same Partitiok key as the base table)
+* The sort key consists of one scalar attribute (String, Number or Binary)
+* Up to 5 local secondary indexes per table
+* Must be defined at table creation time
+* Attribute projections - can contain some or all attributes of the base table
+(KEYS_ONLY, INCLUDE, ALL)
+
+* Uses the WCUs and RCUs of the main table
+* No special throttling considerations
+
+
+Global secondary index
+
+* Alternative primary key (HASH or HASH+RANGE) from the base table
+* Speed up queries on non-key attributes
+* The index key consists of scalar attributes (String, number, binary)
+* Attribute projections - some or all the attributes of the base table
+* Must provision RCUs & WCUs for the index
+* Can be added/modified after table creation
+
+* If the writes are throttled on the GSI, then the main table will be throttled
+* Even if the WCU on the main tables are fine
+* Choose the GSI partition key carefully
+* Assign WCU capacity carefully
+
+
+**DynamoDB PartiQL**
+
+* Use a SQL like syntax to manipulate DynamoDB tables
+* Supports some statemets:
+  * insert
+  * update
+  * delete
+  * select
+* Supports batch operations
+
+**DynamoDB optimistic locking**
+
+* DynamoDB has a feature called "Conditional Writes"
+* A strategy to ensure an item hasn't changed before update/delete
+* Each item has an attribute that acts as a version number
+
+
+**DynamoDB Acceletator (DAX)**
+
+* Fully managed, highly available, seamless in-memory cache for DynamoDB
+* Microseconds latency for cached reads / queries
+* Doesn't require application logic modification (Compatible with existing DynamoDB APIs)
+* Solves the Hot Key problem (too many reads)
+* 5 minutes TTL for cache (default)
+* Up to 10 nodes in the cluster
+* Multi AZ (3 nodes minimum recommended for production)
+* Secure (Encryption at rest with KMS, VPC, IAM, CloudTrail)
+
+**DynamoDB Streams**
+
+* Ordered stream of item-level modifications (create/update/delete) in a table
+* Stream records can be:
+    * Sent to kinesis data streams
+    * Read by AWS Lambda
+    * Read by Kinesis client library applications
+* Data retention for up to 24 hours
+* Use cases:
+    * React to changes in real-time (welcome email to users)
+    * Analytics
+    * Insert into derivative tables
+    * Insert into OpenSearch service
+    * Implement cross-region replication
+
+* Ability to choose the information that will be written to the stream
+   * KEYS_ONLY - only the key attributes of the modified item
+   * NEW_IMAGE - the entire item, as it appears after it was modified
+   * OLD_IMAGE - the entire item, as it appeared before it was modified
+   * NEW_AND_OLD_IMAGES - both the new and the old images of the item
+* DynamoDB streams are made of shards, just like Kinesis Data Streams
+* You don't provision shards, this is automated by AWS
+* Records are not retroactivey populated in a stream after enabling it
+
+**DynamoDB TTL**
+
+* Automatically delete items after an expiry timestamp
+* Doesn't consume any WCUs (i.e no extra cost)
+* The TTL attribute must be a Number data type with Unix Epoch timestamp value
+* Expired items deleted within 48 hours of expiration
+* Expired items, that haven't been deleted, appears in reads/queries/scans
+* Expired items are deleted from both LSIs and GSIs
+* A delete operation for each expired item enters the DynamoDB streams
+* Use cases: reduce stored data by keeping only current items, adhere to regulatory obligations
+
+**DynamoDB CLI**
+
+* --project-expression: one or more attributes to retrieve
+* --filter-expression: filter items before return
+
+___General AWS CLI__
+
+* Pagination
+    * --page-size: specify that AWS CLI retrieves the full list of items but with a larger number of API calls instead of one API call
+    * --max-items: max number of items to show in the CLI
+    * --starting-token: specify the last nexttoken to retrieve the next set of items
+
+**DynamoDB Transactions**
+
+* Coordinated, all or nothing operations (add/update/delete) to multiple items
+across one or more tables
+* Provides atomicity, consistency, isolation and durability (ACID)
+* Read modes - Eventual consistency, strong consistency, transactional
+* Write modes - standard, transactional
+* Consumes 2x WCUs & RCUs
+    * DynamoDB performs 2 operations for every item (prepare & commit)
+* Two operations:
+    * TransactGetItems - one or more GetItem operations
+    * TransactWriteItems - one or more PutItem, UpdateItem and DeleteItem operations
+* Use cases: financial transactions, managing orders, multiplayer games
+
+* Example1: 3 Transactional writes per second, with item size 5KB
+    * We need 5 * 3 * 2(transactional cost 2x) = 30 WCUs
+
+* Example 2: 5 Transaction reads per second, with item size 5KB
+    * We need 2(5KB gets rounded to 8) * 5 * 2(transaction cost) = 20 WCUs
+
+
+**DynamoDB as Session state cache**
+
+* It's common to use DynamoDB to store session state
+* vs ElastiCache:
+    * ElastiCache is in memory, but DynamoDB is serverless
+    * Both are key/value stores
+* vs EFS:
+    * EFS must be attached to EC2 instances as a network drive
+* vs EBS & instance store:
+    * EBS & instance store can onle be used for local caching, not shared caching
+* vs S3:
+    * S3 is higher latency, and not meant for small projects
+
+**DynamoDB Write sharding**
+
+* Imagine we have a voting application with two canditates, candidate A and candidate B
+* If partition key is "Candidate_ID" this results in two partitions, which will generate issues
+
+* Strategy that allows better distribution of items evenly across partitons
+* Add suffix to partition key value
+* Two methods:
+    * Sharding using random suffix
+    * Sharding using calculated suffix
+
+**DynamoDB operations**
+
+* Table cleanup
+    * Option 1: scan + deleteItem
+        * Very slow, consumes RCU & WCUs, expensive
+    * Option 2: Drop Table * Recreate Table
+        * Fast, efficient, cheap
+* Copying DynamoDB table
+    * Option 1: Using AWS Data Pipeline
+    * Option 2: Backup and restore into a new table
+        * Takes some time
+    * Option 3: Scan + PutItem or BatchWriteItem
+        * Write your own code
+
+**DynamoDB Security and Other features**
+
+* Security
+    * VPC Endpoints available to access
+    * Access fully controlled by IAM
+    * Encryption at rest using AWS KMS and in-transit using SSL/TLS
+* Backup and restore feature available
+    * Point-in-time recovery (PITR) like RDS
+    * No performance impact
+* Global tables
+    * Multi-region, multi-active, fully, replicated, high performance
+* DynamoDB local
+    * Develop and test apps locally without accessing the DynamoDB web service (without internet)
+* AWS Database migration service (AWS DMS) can be used to migrate to DynamoDB (from MongoDB, Oracle, MySQL, S3...)
+
+# ~~~~ AWS API Gateway ~~~~
+
+* AWS Lambda + API gateway: No infrastructure to manage
+* Support for the Websocket protocol
+* Handle API versioning (v1, v2)
+* Handle different environments (dev, test, prod)
+* Handle security (Authentication and Authorization)
+* Create API keys, handle request throttling
+* Swagger / Open API import to quckly define APIs
+* Transform and validate requests and responses
+* Generate SDK and API specifications
+* Cache API responses
+
+
+**API Gateway Integrations High level**
+
+* Lambda functions
+    * Invoke lambda function
+    * Easy way to expose REST API backed by AWS lambda
+* HTTP
+    * Expose HTTP endpoints in the backend
+    * Add rate limiting, caching, user authentications, API keys, etc...
+* AWS service
+    * Expose any AWS API through the API gateway
+    * Add authentication, deploy, publicly, rate control...
+
+**API Gateway - Endpoint Types**
+
+* Edge-Optimized(default): For global clients
+    * Requests are routed through the cloudfront edge locations (improves latency)
+    * The API gateway still lives in only one region
+* Regional:
+    * For clients within the same region
+    * Could manually combine with cloudfront
+* Private:
+    * Can only be accessed from your VPC using an interface VPC endpoint (ENI)
+
+**API Gateway - Security**
+
+* User Authentication through
+    * IAM roles (useful for internal applications)
+    * Cognito (identity for external users - example mobile users)
+    * Custom Authorizer (own logic)
+* Custom Doman Name HTTPS - security through integration with AWS Certificate manager
+    * If using Edge-Optimized endpoint, then the certificate must be in us-east-1
+    * If using Regional endpoint, the certificate must be in the API gateway region
+    * Must setup CNAME or A-alias record in Route 53
+
+**API Gateway - Deployment stages**
+
+* Making changes in the API Gateway does not mean they're effective
+* Need to make a deployment to be effective
+* Changes are deployed to "Stages" (as many as we want)
+* Can use any naming we want
+* Each stage has its own configuration parameters
+* Stages can be rolled back as a history of deployments is kept
+
+**API Gateway - Stage variables**
+
+* Stage variables are like ENV variables for API gateway
+* Use them to change often changing configuration values
+* Can be used in:
+    * Lambda function ARN
+    * HTTP endpoint
+    * Parameter mapping templates
+* Use cases:
+    * Configure HTTP endpoints 
+    * Pass configuration parameters to AWS Lambda through mapping templates
+* Stage variables are passed to the context object in AWS lambda
+* Format: ${stageVariables.variableName}
+
+**API Gateway - Stage variables && Lambda Aliases**
+
+* Create stage variables to indicate the corresponding lambda alias
+* API Gateway wil automatically invoke the right Lambda function
+
+**API Gateway - Canary Deployment**
+
+* Possibility to enable canary deployments for any stage
+* Choose the % of traffic the canary channel reeceives
+* Metris & Logs are separate
+* Possibility to override stage variables for canary
+* This is blue / green deployment with AWS Lambda & Gateway
+
+**API Gateway - Integration Types**
+
+* Integration Type Mock
+    * API Gateway returns a response without sending the request to the backend
+
+* Integration Type HTTP/ AWS (Lambda & AWS Services)
+    * Configure both the integration request and integration response
+    * Setup data mapping using mapping templates for the request and response
+
+* Integration Type AWS_PROXY (Lambda Proxy)
+    * Incoming request from the client is the input to lambda
+    * The function is responsible for the logic of the request/response
+    * No mapping template, headers, query string paramenters are passed as arguments
+
+* Integration Type HTTP_PROXY
+    * No mapping template
+    * HTTP request is passed to the backend
+    * HTTP response from the backend is forwarded by API Gateway
+    * Possibility to add HTTP headers if need be (ex: API Key)
+
+* Mapping Templates (AWS & HTTP integration)
+    * Mapping templates can be used to modify request/responses
+    * Rename string paramenters
+    * Modify body content
+    * Add headers
+    * Uses velocity template language
+    * Filter ouput results
+    * Content-Type can be set to application/json or application/xml
+
+**API Gateway - Open API spec**
+
+* Common way of defining REST APIs usin API definition as code
+* Import existing OpenAPI 3.0 spec to API Gateway
+    * Method
+    * Method request
+    * Integration request
+    * Method Response
+    * + AWS extensions for API gateway and setup every single option
+
+* Can export current API as OpenAPI spec
+* OpenAPI specs can be written in YAML or JSON
+* Using OpenAPI we can generate SDK for our applications
+
+**API Gateway - Caching API responses**
+
+* Reduces the number of calls made to the backend
+* Default TTL is 300 seconds and max can be set to 3600 seconds
+* Caches are defined per stage
+* Possible to override cache settings per method
+* Cache encryption option
+* Cache capacity between 0.5GB to 237GB
+* Cache is expensive, only use in pre-prod or prod
+
+___Cache Invalidation___
+
+* Able to flush entire cache immediately
+* Clients can invalida the cache with the header: Cache-Control; max-age=0
+* If policy invalidateCache not imposed, any client can invalidate the API cache
+
+**API Gateway - Usage Plans & API Keys**
+
+* If we want to make and API available as an offering ($) to our customers
+* Usage Plan:
+    * Who can access one or more deployed API stages and methods
+    * How much and how fast the can access them
+    * use API keys to identify API clients and meter access
+    * configure throtling limits and quota limits that are enforced on individual client
+* API Keys:
+    * alphanumeric string values to distribute to your customers
+    * Can use with usage plans to control access
+    * Throttling limits are applied to the API keys
+    * Quota limits is the overall number of maximum requests
+
+___Correct Order for API keys___
+
+* To configure a usage plan
+    * Create one or more APIs, configure the methods to require an API key, and deploy the APIs to stages
+    * Generate or import API keys to distribute to application developerts who will be using the API
+    * Create the usage plan with the desired throttle and quota limits
+    * Associate API stages and API keys with the usage plan
+
+* Callers of the API must supply an assigned API key in the x-api-key header in request to the API
+
+**API Gateway - Logging and Tracing**
+
+* Cloudwatch logs
+    * Log contains information about request and reponse body
+    * Enable cloudwatch loggin at the stage level
+    * Can override settings on a per API basis
+* X-Ray
+    * Enable tracing to get extra information about requests in API gateway
+    * X-Ray API Gateway + AWS Lambda gives ful picture
+
+___Cloudwatch metrics___
+
+* Metrics are by stage, possibility to enable detailed metrics
+* CacheHitCount & CacheMissCount: efficiency of the cache
+* Count: total number of API requests in a given period
+* Integration latency: Time between when API gateway relays arequest to the backend and when it receives a response from the backend
+* Latency: full latency of the request with API Gateway overhead
+
+___API Gateway throttling___
+
+* Account limit
+    * API gateway throttles requests at 10000 rps across all API
+    * Soft limit that can be increased upon request
+* In case of throttling -> 429 Too many requests (retriable error)
+* Can set Stage limit & method limits to improve performance
+* Or define Usage Plans to throttle per customer
+
+* One API that is overloaded, can cause the other APIs to be throttled
+
+___API Gateway Errors___
+
+* 4xx means client errors
+    * 400
+    * 403
+    * 429 Quota exceeded, throttle
+* 500x means server errors
+    * 502: Bad gateway usually for an incompatible output returned from a lambda proxy integration backend and occasionally for out-of-order invocations due to heavy loads
+    * 503
+    * 504 Integration failure - ex Endpoint request timet out exception
+    * API Gateway request time ut after 29 second maximum
+
+**API Gateway - CORS**
+
+* Must be enabled when receiving API calls from another domain
+* CORS can be enable through the console
+
+
+**API Gateway - Security**
+
+Multiple ways to Authenticate and Authorize requests to API Gateway
+
+___Resource policies___
+
+* Similar to Lambda resource policies
+* Allow for cross acount access combined with IAM security
+* Allow for specific source IP address
+* Allow for a VPC endpoint
+
+
+___IAM Permissions___
+
+* Create an IAM policy authorization and attach to user / role
+* Authentication = IAM | Authorization = IAM Policy
+* Good to provide access within AWS (EC2, Lambda, IAM users)
+* Leverages "Sig v4" capability where IAM credential are in headers
+
+___Cognito User Pools___
+
+* Cognito fully manages user lifecycle, token expires automatically
+* API gatway verifies identity automatically from AWS cognito
+* No custom implementation required
+* Authentication = Cognito User Pools | Authorization = API Gateway Methods
+* Must implement authorization in the backend
+
+___Lambda Authorizer___
+
+* Token based authorizer (bearer token) - ex JWT (JSON web token) or Oauth
+* A request parameter-based lambda authorizer (headers, query string, stage var)
+* Lambda must return an IAM policy for the user, result policy is cached
+* Authentication = External | Authorization = Lambda function
+* Greate for 3rd party tokens
+* Flexible in terms of what IAM policy is returned
+
+**API Gateway - Websocket API**
+
+* Used in real-time application such as chat applications, collaboration platforms, multiplayer games and financial trading platforms
+* Works with AWS Services
+* POST - Sends a message from the server to the Connected WS client
+* GET - Gets the latest connection status of the connected WS client
+* DELETE - Disconnect the connected Client from the WS connection
+
+___Routing___
+
+* Incoming JSON messages are routed to different backend
+* If no routes -> sent to $default
+* You request a route selection expression to select the field on JSON to route from
+* Sample expression: $request.body.action
+* Result is evaluated against the route keys available in the API Gateway
+* The route is then connected to the backend you've setup through API Gateway
+
+
 
 ** _TCP is layer 4_.
 
