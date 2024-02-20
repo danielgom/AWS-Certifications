@@ -3813,6 +3813,377 @@ ___Routing___
 * The route is then connected to the backend you've setup through API Gateway
 
 
+# ~~~~ AWS CICD ~~~~
+
+**CICD - AWS CodeCommit**
+
+* Version control is the ability to understan the various changes that happened to the code overtime
+* Git repositories can be expensive
+* Competitor to GitHub, Gitlab, Bitbuchet etc...
+* AWS CodeCommit:
+    * Private git repositories
+    * No size limi on repositories
+    * Fully managed, highly available
+    * Code only in AWS Cloud account -> increased security and compliance
+    * Security
+    * Integrated with Jenkins, AWS CodeBuild and other CI tools
+
+___Security___
+
+* Interactions are done using Git(standard)
+* Authentication
+    * SSH Keys - AWS users can configure SSH keys in their IAM console
+    * HTTPS - with AWS CLI credential helper or Git Credentials for IAM user
+* Authorization
+    * IAM policies to manage users/roles permissions to repositories
+* Encryption
+    * Repositories are automatically encrypted at rest using AWS KMS
+    * Encrypted in transit (can only use HTTPS or SSH - both secure)
+* Cross-account Access
+    * Do not share your SSH keys or you AWS credentials
+    * User IAM role in the AWS account and use AWS STS
+
+**CICD - AWS CodePipeline**
+
+* Visual Workflow to orchestrate CICD
+* Source - CodeCommit, ECR, S3, BitBucket, Github
+* Build - CodeBuild, Jenkins, CloudBees, TeamCity
+* Test - CodeBuild, AWS Device Farm, 3rd party tools
+* Deploy - CodeDeploy, Elastic Beanstalk, CloudFormation, ECS, S3
+* Invoke - Lambda, Step Functions
+* Consists of stages:
+    * Each stage can have sequential actions and/or parallel actions
+    * Example: Build -> Test -> Deploy -> Load testing...
+
+**CICD - AWS CodeBuild**
+
+* Source - CodeCommit, S3, BitBucket, GitHub
+* Build instructions - Code file buildspec.yml or instert manually in console
+* Output logs can be store in Amazon S3 & CloudWatch logs
+* CloudWatch metrics to monitor build statistics
+* EventBridge to detect failed builds and trigger notifications
+* CloudWatch alarms to notific if thresholds are needed for failures
+
+___Buildspec.yaml___
+
+* Must be at the root of the code
+* env - define environment variables
+    * variables - paintext variables
+    * parameter-store - variables stored in SSM parameter store
+    * secrets-manager - varaibles stored in AWS Secrets Manager
+* phases - specify commands to run
+    * install - install dependencies needed for the build
+    * pre_build - final commands to execute before build
+    * build - actual build commands
+    * post_build - finishing touches
+* artifacts - what to upload to S3, encrypted with KMS
+* cache - files to cache, usually dependencies to S3 for future build speedup
+* Looks like Gitlab CI or GitHub actions, one file needed to run the pipeline.
+
+**CICD - AWS CodeDeploy**
+
+* Deployment service that automates application deployment
+* Deploy new application versions to EC2 instances, On-premises servers, Lambda functions, ECS services
+* Automated rollback capability in case of failed deployments or trigger CloudWatch Alarm
+* Gradual deployment control
+* A file named appspec.yml defines how the deployment happens
+
+___EC2/On premises platform___
+
+* Can deploy to EC2 instances & on premises servers
+* Perform in-place deployments or blue/green deployments
+* Must run the CodeDeploy Agent on the target instances
+* Define deployment speed
+    * AllAtOnce: most downtime
+    * HalfAtATime: reduced capacity by 50%
+    * OneAtATime: slowest, slowest availability impact
+    * Custom: define the %
+
+___Agent___
+
+* The CodeDeploy Agent must be running on the EC2 instances as a pre-requisite
+* It can be installed and updated automatically if you're using Systems Manager
+* The EC2 instances must have sufficient permissions to access Amazon S3 to get deployment bundles
+
+___Lambda Platform___
+
+* CodeDeploy can help automate traffic shift for labmda aliases
+* Feature is integrated within the SAM framework
+* Linear: grow traffic every N minutes until 100%
+    * LambdaLinear10PercentEvery3Minutes
+    * LambdaLinear10PercentEvery10Minutes
+* Canary: try X percent then 100%
+    * LambdaCanary10Percent5minutes
+    * LambdaCanary10Percent30minutes
+* AllAtOnce: immediate
+
+___ECS Platform___
+
+* Can help automate the deployment of a new ECS Task
+* Only blue/green deployments
+* Linear: grow traffic every N minutes until 100%
+    * LambdaLinear10PercentEvery3Minutes
+    * LambdaLinear10PercentEvery10Minutes
+* Canary: try X percent then 100%
+    * LambdaCanary10Percent5minutes
+    * LambdaCanary10Percent30minutes
+* AllAtOnce: immediate
+
+___Deploy to EC2___
+
+* Define how to deploy the application using appspec.yml + Deployment strategy
+* Will do In-place update to the EC2 instances
+* Can use hooks to verify the deployment after each deployment phase
+
+___Deploy to an ASG___
+
+* Update existing EC2 instances
+* Newly created EC2 instances by an ASG will also get automated deployments
+* Blue/Green deployment:
+    * A new auto-scaling group is created (settings are copied)
+    * Choose how long to keep te old EC2 instances (old ASG)
+    * Must be using an ELB
+
+___Redeploy & Rollbacks___
+
+* Rollback = redeploy a previously deployed revision of the application
+* Deployments can be rolled back:
+    * Automatically -- rollback when a deployment fails or rollback when a CloudWatch Alarm thresholds are met
+    * Manually
+* Disable Rollbacks -- do not perfomr rollbacks for this deployment
+* If a rollback happens, CodeDeploy redeploys the last known good revision as a new deployment
+
+**CICD - AWS CodeStar**
+
+Integrated solution that groups GitHub, CodeCommit, CodeBuild, CodeDeploy, CloudFormation,
+CodePipeline, Cloudwatch...
+
+* Quickly create "CICD-ready" projects for EC2, Lambda, ElasticBeanstalk
+* Supports many common languages in the industry
+* Issue tracking integration with JIRA / GitHub issues
+* Ability to integrate with Cloud9 to obtain a web IDE (not all regions)
+* One dashboard to view all your components
+* Free service, pay for the underlying usage of other services
+* Limited customization
+* Will be replaced by CodeCatalyst
+
+**CICD - AWS CodeArtifact**
+
+* Software packages depend on each other to be built, also called code dependencies
+* Storing and retrieving these dependencies is called artifact management
+* Traditionally we would need to setup our own artifact management system
+* Secure, scalable and cost-effective
+* Works with common dependency management tools such as Maven, Gradle, npm, yarn, twine, pip
+* Developers and CodeBuild can then retrieven dependencies straight from CodeArtifact
+
+___Resource Policy___
+
+* Can be used to authorize another account to access CodeArtifact
+* A given principal can either tead all the packages in a repository or none of them
+* Resource policy can authorize another account to get packages from your artifacts
+
+**CICD - AWS CodeGuru**
+
+An ML-powered service for automated code reviews and application performance recommendations
+
+* Provides two functionalities:
+    * Reviewer: automated code reviews for static code analysis
+    * Profiler: visibility/recommendations about application performance during runtime
+
+___Reviewer___
+
+* Identify critical issues, security, vulnerabilities, and hard to find bugs
+* Common codign best practices, resource leaks, security detection, input validation
+* Uses Machine Learning and automated reasoning
+* Hard-learned lessosn across millions of code reviews on 1000s of open-source and Amazon repositories
+* Supports java and python
+* Integrates with Github, Bitbucket and AWS CodeCommit
+
+___Profiler___
+
+* Helps understand the runtime behaviour of the application
+* Identify and remove code innefficiencies
+* Improve application performance
+* Decrease compute costs
+* Provides heap summary
+* Anomaly detection
+* Supports applications running on AWS or on-premise
+* Minimal overhead on application
+
+___Agent Configuration___
+
+* MaxStackDepth - the maximum depth of the stacks in the code that is represented in the profile
+    * Example: If CodeGuru profilers finds a method A, which calls method B, which calls method C, which calls method D....
+    * If the MaxStackDepth is set to 2, the profiler evaluates A and B
+* MemoryUsageLimitPercent - the memory percentage used by the profiler
+* MinimumTimeForReportingMilliseconds - the minimum time between sending reports
+* ReportingIntervalInMilliseconds - the reporting interval used to report profiles
+* SamplingIntervalInMilliseconds - the sampling interval used to profile samples
+
+**CICD - AWS Cloud9**
+
+* Cloud-based intergated Development Environment IDE
+* Code editor, debugger, terminal in a browser
+* Work on projects anywhere with an internet connection
+* Prepackaged with essential tools for popular programming languages
+* Share deevelopment environment with the team
+* Fully integrated with AWS SAM & Lambda to easily build serverless application
+
+
+# ~~~~ AWS SAM ~~~~
+
+* SAM = Serverless Application Model
+* Framework for developing and deploying serverless applications
+* All the configuration is YAML code
+* Generate complex CloudFormation from simple SAM YAML file
+* Supports anything from CloudFormation, Outputs, Mappings, Paramenters, Resources
+* Only two commands to deploy to AWS
+* SAM can use CodeDeploy to deploy lambda function
+
+Step to follow:
+1. Build the application locally, sam build (SAM template + application code) -> tranform into CloudFormaton template
+2. Package the application, sam package or aws cloudformation package (CloudFormation template + application code) -> zip and upload into S3 bucket
+3. Deploy the application, sam deploy or aws cloudformation deploy (create/execute change set) -> to CloudFormation
+
+___CLI Debugging___
+
+* Locally build, test and debug serverless applications thta are dedined using AWS SAM templates
+* Provides a lambda-like execution environment locally
+* SAM CLI + AWS Toolkits => step-through and debug the code
+* Multiple IDEs support
+
+___PolicyTemplates___
+
+* List of templates to apply permissions to your Lambda Functions
+* Important examples:
+    * S3ReadPolicy: Gives read only permissions to objects in S3
+    * SQSPollerPolicy: Allows to poll an SQS queue
+    * DynamoDBCrudPolicy: create, read, update, delete
+
+**SAM - SAM and CodeDeploy**
+
+* SAM framework natively uses CodeDeploy to update lambda functions
+* Traffuc shifting feature
+* Pre and Post traffic hooks feature to validate deployment
+* Easy & automated rollback using CloudWatch alarms
+* AutoPublicAlias
+    * Detects when new code is being deployed
+    * Creates and publishes and updated version of that function with the latest code
+    * Point the alias to the updated version of the lambda function
+* DeploymentPreference
+    * Canary, Linear, AllAtOnce
+* Alarms
+    * alarms that can trigger a rollback
+* Hooks
+    * Pre and post traffic shifting lambda functions to test your deployment
+
+**SAM - Local capabilities**
+
+* Locally start an API Gateway endpoint
+    * sam local start-api
+    * Starts a local HTTP server that hosts all your functions
+    * Changes tof unctions are automatically reloaded
+* Generate AWS Events for Lambda Functions
+    * sam local generate-event
+    * Generate sample payloads for event sources
+    * S3, API Gateway, SNS, Kinesis, DynamoDB    
+
+**SAM - Exam summary**
+
+* SAM is built on CloudFormation
+* SAM requires the Transform and Resources sections
+* Commads to know:
+    * sam build: fetch dependencies and create local deployment artifacts
+    * sam package: package and upload to Amazon S3, generate CF template
+    * sam deploy: deploy to CloudFormation
+* SAM policy templates for easy IAM policy definition
+* SAM is integrated with CodeDeploy to do deploy to lambda aliases
+
+
+# ~~~~ AWS  Cloud Development Kit ~~~~
+
+Define cloud infrastructure using a programming language
+
+* Contains high level components called constructs
+* The code is compiled into a CloudFormation template (JSON/YAML)
+* Great for lambda functions, Great for Docker containers in ECS / ECK
+
+
+___CDK VS SAM___
+
+* SAM:
+    * Serverless focused****
+    * Write your template declaratively in JSON or YAML
+    * Great for quickly getting started with lambda
+    * Leverages CloudFormation
+* CDK
+    * All AWS Services****
+    * Write infra in a programming language JS/TS, Pythin, Java and .NET
+    * Leverages cloud formation
+
+**CDK - Constructs**
+
+* CKD Construct is a component that encapsulates everything CDK needs to create the final CloudFormation stack
+* Can represent a single AWS resource (e.g. S3 Bucket) or multiple related resources
+* AWS Construct library
+    * A collection of Constructs included in AWS CDK which contains Constructs for every AWS resource
+    * Contains 3 different levels of Constructs available (L1, L2, L3)
+* Construct hub - containts additional Constructs from AWS, 3rd parties and open-source CKD community
+
+___Layer 1 L1___
+
+* Can be called CFN resources wihch represents all resources directly available in CloudFormation
+* Constructs are periodically generated from CloudFormation Resource Specification
+* Construct names start with Cfn (e.g. CfnBucket)
+* Must explicitly configure all resource properties
+
+___Layer 2 L2___
+
+* Represents AWS resources but with a higher level API
+* Similar functionality as L1 but with convenient defaults and boilerplate
+    * Don't need to know all the details about the resource properties
+* Providem ethods that make it simpler to work with the resource
+
+___Layer 3 L3___
+
+* Can be called Patterns, which represents multiple related resources
+* Helps to complete common tasks in AWS
+* Examples: 
+    * aws-apigateway.LambdaRestApi represents an API Gateway backed by a Lambda function
+    * aws-ecs-patterns.ApplicationLoadBalancerFargateService which represents an architecture that includes a fargate cluster with an Application load balancer
+
+**CDK - Commands to know**
+
+* cdk init app - Create a new SK project from specified template
+* cdk synth - synthetizes and prints the CloudFormation template
+* cdk bootstrap - Deploys the CDK toolkit staging stack
+* cdk deploy - Deploy stack
+* cdk diff - View differences of local CDK and deployed stack
+* cdk destroy - Destroy the stack
+
+**CDK - Bootstraping**
+
+* Process of provisioning resources for CDK before we can deploy CDK apps into AWS environment
+* AWS Environment = account & region
+* CloudFormation stack called CDKToolkit is created and contains:
+    * S3 bucket - to store files
+    * IAM Roles - to grant permissions to perform deployments
+* Must run the following command for each environment
+    * cdk bootstram aws://<aws_account>/<aws_region>
+* Otherwise, you will get an error "Policy contains a statement with one or more invalid principal"
+
+**CDK - Testing**
+
+* To test CDK apps, use CDK Assertions Module combined with popular test frameworks
+* Verify we have specific resources, rules, conditions, parameters...
+
+* Two types of tests:
+    * Fine-grained Assertions (common) - test specific aspects of the CloudFormation template (e.g. check if a resource has this property with this value)
+    * SnapshotTests - test the synthetized CloudFormation template againsts a previously stored baseline template
+* To import a template
+    * Template.fromStack(mystack): stack built in CDK
+    * Template.fromString(mystring): stack build outside CDK
+
 
 ** _TCP is layer 4_.
 
