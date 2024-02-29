@@ -4185,8 +4185,381 @@ ___Layer 3 L3___
     * Template.fromString(mystring): stack build outside CDK
 
 
+# ~~~~ AWS Cognito ~~~~
+
+Gives users an identity to interact with our web or mobile application
+
+* Cognito user pools:
+    * Sign in functionality for app users
+    * Integrate with API Gateway & Application load balancer
+* Cognito Identity Pools (Federated Identity):
+    * Provide AWS credentials to users so they can access AWS resources directly
+    * Integrate with Cognito User Pools as an identity provider
+
+* Cognito vs IAM: "hundreds of users", "mobile users", "authtenticate with SAML"
+
+**Cognito - User pools CUP**
+
+CUP integrates with API Gateway and Application load balancer 
+
+* Create a serverless database of user for web and mobile apps
+* Simple login: Username or email / password combination
+* Password reset
+* Email & Phone number verification
+* Multi-Factor authentication (MFA)
+* Federated identities: users from Facebook, Google, SAML
+* Feature: block users if their credentials are compromised elsewhere
+* Login sends bakc a JSON web token (JWT)
+
+___Lambda Triggers___
+
+* CUP can invoke a Lambda function synchronously on some triggers:
+    * PreAuthenticationLambdaTrigger -> custom validation to accept or deny the sign-in request
+    * PostAuthenticationLabmdaTrigger -> Event logging for customer analytics
+    * Pre-TokenGenerationLambdaTrigger -> Augment or supress token claims
+
+___HostedAuthenticationUI___
+
+* Cognito has a hosted Authentication UI that can be added to the app to handle sign-up and sign-in workflows
+* Using the hosted UI, there is a foundation for integration with social logins, OIDC or SAML
+* Can customize with a custom logo and custom CSS
+* For custom domains, we must create an ACM certificate in us-east-1
+* The custom domain must be defined in the "App-integration" section
+
+___Adaptive Authentication___
+
+* Block sign-in or require MFA if the login appears suspicious
+* Cognito examines each sign-in attempt and generates a risk score (low, medium, high) for how likely the sign-in request is to be from a malicious attacker
+* Users are prompted for a second MFA only when risk is detected
+* Risk Score is based on different factors such as if the user has used the same device, location or IP address
+* Checks for compromised credentials, account takeover protection, and phone and email verification
+* Integration with CloudWatch logs (Sign-in attempts, risk score, failed challenges)
+
+**Cognito - Application load balancer**
+
+* Application load balancer can securely authenticate users
+    * Offload the work of authenticatin users to the load balancer
+    * Applications can focus on the business logic
+* Authenticate users through:
+    * Identity provider (IdP): OpenID connect (OIDC) compliant
+    * Cognito user pools:
+        * Social IdPs, such as Amazon, Facebook or Google
+        * Corporate identities using SAML, LDAP, or Microsoft AD
+* Must use an HTTPS listener to set authenticate-ids & authenticate-cognito rules
+* OnUnauthenticatedRequest - authenticate (default), deny, allow
+
+___Auth through Cognito User pools___
+
+* Create Cognito User pool, client and Domain
+* Make sure an ID token is returned
+* Add the social or Corporate IdP if needed
+* Several URl redirections are necessary
+* Allow cognito user pool domain on IdP app's callback URL. For Example:
+    * https://domain.prefix.auth.region.amazoncognito.com/saml2/idpresponse
+
+___Auth through Identity provider OIDC compliant___
+
+* Configure a client ID & Client secret
+* Allow redirect from OIDC to your Application Load Balancer DNS name (AWS provided) and CNAME (DNS Alias of the app)
+
+**Cognito - Identity Pools (Federated identities)**
+
+Get identities for users so the obtain temporary AWS credentials
+
+* Identity pool can include:
+    * Public providers (Login with Amazon, Facebook, Google, Apple)
+    * Users in an Amazon Cognito user pool
+    * OpenID connect providers & SAML identity providers
+    * Developer authenticated identities (Custom Login server)
+    * Cognito Identity pools allow for unauthenticated (guest) access
+* Users can then access AWS services directly or throught API Gateway
+    * The IAM policies appliad to the credentials are defined in cognito
+    * They can be customized based on the user_id for fine grained control
+
+* Default IAM roles for authenticated and guest users
+* Define rules to choose the role for each user based on the user's ID
+* Can partition user access using policy variables
+* IAM credentials are obtained by Cognito Identity Pools throught STS
+* Roles must have a "trust" policy of cognito identity pools
+
+**Cognito - User pools vs Identity pools**
+
+* Cognito user pools
+    * Database of users for web and mobile applications
+    * Allows to federate logins through public social OIDC, SAML
+    * Can customize the hosted UI for authentication (including the logo)
+    * Has triggers with AWS lambda during the authentication flow
+    * Adapt the sign-in experience to different risk levels (MFA, adaptive authentication)
+
+* Cognito identity pools
+    * Obtain AWS credentials for the users
+    * Users can login through Public social, OIDC, SAML & Cognito User Pools
+    * Users can be unauthenticated
+    * Users are mapped to IAM roles & policies, can leverage policy variables
+
+* CUP + CIP = authentication + authorization
+
+
+# ~~~~ AWS Step Functions & AppSync ~~~~
+
+* Model your workflow as state machines (one per workflow)
+    * Order fulfillment, data processing
+    * Web applications, any workflow
+* Written in JSON
+* Visualization of the workflow and the execution of the workflow as well as history
+* Start workflow with SDK call, API Gateway, Event bridge
+
+**Step Function - Task States**
+
+* Do some work in the state machine
+* Invoke one AWS service
+    * Can invoke a lambda function
+    * Run an AWS Batch job
+    * Run an ECS task and wait for it to complete
+    * Insert an item from DynamoDB
+    * Publish message to SNS, SQS
+    * Launch another step function workflow...
+* Run an one Activity
+    * EC2, Amazon ECS, on-premises
+    * Activities poll the step functions for work
+    * Activities send results back to Step functions
+
+**Step Function - States**
+
+* Choice state - Test for a condition to send to a branch
+* Fail or Succeed state - Stop execution with failure or success
+* Pass state - Simply pass its input to its output or inject some fixed data
+* Wait state - Provide a delay for a certain amount of time or until a specified time/date
+* Map state - Dynamically iterate steps
+* Parallel state - Begin parallel branches of execution
+
+**Step Function - Error handling**
+
+* Any state can encounter runtime errors for various reasons:
+    * State machine definition issues
+    * Task failures
+    * Transient issues
+* Use Retry and catch in the state machine to handle the errors instead of inside the application code
+* Predefined error codes:
+    * States.All: matches any error name
+    * States.Timeout: Task ran longer than TimeoutSeconds or no heartbeat received
+    * States.TaskFailed: execution failure
+    * States.Permissions: insufficient privileges to execute code
+* The state may report its own errors
+
+___Retry Task or parallel___
+
+* Evaluated from top to bottom
+* ErrorEquals: matcha specific kind of error
+* IntervalSeconds: initial delay before retrying
+* BackOffRate: multiple the delay after each retry
+* MaxAttempts: default to 3, set to 0 for never retried
+* When max attempts are reached, the catch kicks in
+
+___Catch Task or parallel___
+
+* Evaluated from top to bottom
+* ErrorEquals: matcha specific kind of error
+* Next: state to send to
+* ResultPath: A path that determines what input is sent to the state specified in the Next field
+
+**Step Function - Wait for task token**
+
+* Allows you to pause Step Functions during a task until a task token is returned
+* Task might wait for other AWS services, human approval, 3rd party integration, call legacy systems...
+* Append .waitForTaskToken to the resource field to tell Step Functions to wait for the task token to be returned
+* Task will pause until it receives that Task Token back with a SendTaskSuccess or SendTaskFailure API call
+* Push action
+
+**Step Function - Activity tasks**
+
+* Enables you to have the Task work performed by an Activity Worker
+* Activity Worker apps can be running on EC2, Lambda, mobile device
+* Activity worker poll for a Task using GetActivityTask API
+* After activity worker completes its work, it sends a response of its success/failure using SendTaskSuccess or SendTaskFailure
+* To keep the task active:
+    * Configure how long a task can wait by setting TimeoutSeconds
+    * Periodically send a heartbeat from your Activity Worker using SendTaskHeartBeat withinb the time set in HeartBeatSeconds
+* Pull action
+
+**Step Function - Standard vs Express**
+
+* Standard
+    * Max duration - Up to 1 year
+    * Execution model - Exactly-once Execution
+    * Execution rate - Over 2000 / second
+    * Execution History - Up to 90 days or using CloudWatch
+    * Pricing - #of state transitions
+    * Use cases - Non-idempotent actions (e.g. processing payments)
+* Express
+    * Max duration - Up to 5 minutes
+    * Execution rate - Over 100,000 / second
+    * Execution History - CloudWatch
+    * Pricing - #of executions, duration and memory consumption
+    * Use cases - IoT data ingestion, streaming data, mobile app backends
+    * Async
+        * At least once
+        * Does not wait for workflow to complete
+        * Don't need immediate response
+        * Must manage idempotence (can retry)
+    * Sync
+        * At most once
+        * Wait for workflow to complete
+        * Need immeadiate response
+        * Can be invoked from API Gateway or Lambda Function
+
+**AWS AppSync - Overview**
+
+* AppSync s a manager service that user GraphQL
+* GraphQL makes it easy for applications to get exactly the data they need
+* This includes combining data from one or more resources
+    * NoSQL data stores, relational databasesm HTTP APIs
+    * Integrates with DynamoDB, aurora, OpenSearch & others
+    * Custom resource with AWS lambda
+* Retrieve data in real-time with WebSocket or MQTT on websocket
+* For mobile apps: local data access & data sync
+* it all starts with uploading one GraphQL schema
+
+___Security___
+
+* There are four ways you can authorize applications to interact with AWS APPSync GraphQL API
+    * API_KEY
+    * AWS_IAM
+    * OPENID_CONNECT
+    * AMAZON_COGNITO_USER_POOLS
+
+**AWS Amplify - Overview**
+
+* Set of tools to get started with creating mobile and web applications
+* Elastic beanstalk for mobile and web applications
+* Must have features such as data storage, authentication, storage and machine-learning, all powerred by AWS services
+* Front-end libraries with ready-to-use components for react.ks, vue, JS, iOS, Android and Flutter
+* Incorporates AWS best practices for reliability, security and scalability
+* Build and deploy with the Amplify CLI or Amplify studio
+
+
+___Authentication___
+
+* Leveragea amazon cognito
+* User registration, authentication, account recovery and other operations
+* Support MFA, Social Sign-in, etc...
+* Pre-built UI components
+* Fine-grained authorization
+
+___Datastore___
+
+* Leverages Amazon AppSync and Amazon DynamoDB
+* Work with local data and have automatic synchronization to the cloud with complex code
+* Powered by GraphQL
+* Offline and real-time capabilities
+* Visual data modeling with aplify studio
+
+___End-to-End testing E2E___
+
+* Run end-to-end tests in test phase in Amplify
+* Catch regressions before pushing code to production
+* Use the test step to run any test commands at build time (amplify.yml)
+* Integrated with cypress testing framework
+    * Allows to generate UI reports for tests
+
+**AWS STS - Overview**
+
+* Allows to grant limited and temporary access to AWS resource (up to 1 hour)
+* AssumeRole: Assume roles within your account or cross account
+* AssumeRoleWithSAML: return credentials for users logged with SAML
+* AssummeRoleWithWebIdentity
+    * return creds for users logged with an IdP
+    * AWS recomments against using this, and using Cognito Identity Pools instead
+* GetSessionToken: for MFA, from a user or AWS ccount root user
+* GetFederationToken: obntain temporary creds for a federated user
+* GetCallerIdentity: return details about the IAM user or role used in the API call
+* DecodeAuthorizationMessage: decode error message when an AWS API is denied
+
+**AWS STS - Assume a Role**
+
+* Define an IAM role within the account or cross account
+* Define which principals can access this IAM role
+* Use AWS STS to retrieve credentials and impersonate the IAM role you want access to (AssumeRole API)
+* Temporary credentials can be valid between 15 minutes to 1 hour
+
+**AWS STS - MFA**
+
+* Use GetSessionToken from STS
+* Appropiate IAM policy using IAM conditions
+* aws:MultiFactorAuthPresent:true
+* Reminder, GetSessionToken
+    * Access ID
+    * Secret Key
+    * Secret Token
+    * Expiration date
+
+**AWS STS - Advanced IAM**
+
+* If there's an explicit DENY, end decision and DENY
+* If there's is an ALLOW, end decision with ALLOW
+* else DENY
+
+___IAM POLICIES & S3 Bucket policies___
+
+* IAM policies are attached to users, roles and groups
+* S3 bucket policies are attached to buckets
+* When avaluation if an IAM principal can perform an operation X on a bucket
+the union of its assigned IAM policies and S3 policies will be evaluated:
+    1. IAM role authorizes RW to "my bucket" + No S3 bucket policy attached -> can read/write to "my bucket"
+    2. IAM role authorizes RW to "my bucket" + S3 bucket explicit deny to the IAM role -> cannot read/write to "my bucket"
+    3. IAM role, no S3 bucket permissions + S3 bucket explicit RW allow -> can read/write to "my bucket"
+    4. IAM role attached, explicit deny to S3 + S3 bucket explicit RW allow -> cannot read/write to "my bucket" 
+
+___Dynamic Policies with IAM___
+
+* Create one dynamic policy with IAM
+* Leverage the special policy variable ${aws:username}
+
+___Inline vs Managed Policies___
+
+* AWS Manage policy
+    * Maintained by AWS
+    * Good for power users and administrators
+    * Updated in case of new services / new APIs
+* Customer Managed policy
+    * Best practice, re-usable, can be applied to many principals
+    * Version controlled + rollback, central change management
+* Inline
+    * Strict one-to-one relationship between policy and principal
+    * Policy is deleted if you delete the IAM principal
+
+___Granting a User permissions to pass a role to an AWS service___
+
+* To configure many AWS services, we must pass an IAM role to the service
+* The service will later assume the role and perform actions
+* Example of passing a role:
+    * To an EC2 instance
+    * To a Lambda Function
+    * To an ECS task
+    * To CodePipeline to allow it to invoke other services
+* For this we need the IAM permission iam:PassRole
+* it often comes with iam:GetRole to view the role being assigned
+* Roles can only be passed to what their trust allows
+* A trust policy for the role that allows the service to assume the role
+
+**AWS Directory services**
+
+* Found on any Windows Server with AD Domain Services
+* Database of objects: User accounts, Computers, Printers, File Shares, Security Groups
+* Centralized security management, create account, assign permissions
+* Objects are organized in trees
+* A group of trees is a forest
+
+* AWS managed Microsoft AD
+    * Create your own AD in AWS, manage users locally, supports MFA
+    * Establish 'trust' connections with your on-premise AD
+* AD connector
+    * Directory Gateway (proxy) to redirect to on-premise AD, supports MFA
+    * Users are managed on the on-premise AD
+* Simple AD
+    * AD-compatible managed directory on AWS
+    * Cannot be joined with on-premise AD
+
 ** _TCP is layer 4_.
 
 ** _HTTP and HTTPS are layer 7_
-
-
