@@ -553,6 +553,8 @@ ASG are free, you only pay for the EC2 instances that may be created.
 * Ensure we have a minimum and maximum number of EC2 instances running
 * Automatically register new EC2 instances to a load balancer
 * Re-create an EC2 instance in case of a previous one is terminated
+* Can contain EC2 instances in multiple AZ of a region
+* AGS that span across multiple regions need to be enabled for all the regions specified
 
     ___Auto scaling group attributes___
 
@@ -1005,10 +1007,12 @@ An IAM principal can access an S3 object if:
 
 There is no concept of directories within buckets but UI can trick us.
 
+* IAM Access Analyzer - AWS IAM Access Analyzer helps you identify the resources in your organization and accounts, such as Amazon S3 buckets or IAM roles, that are shared with an external entity. 
+
 **S3 Versioning**
 
 * You can version files in AWS S3
-* IT is enabled at the bucket level
+* IT versioning is enabled at the bucket level
 * Same key overwrite will change the version: 1,2,3
 * It is a best practice to version buckets:
     * Protect against unintended deletes (ability to restore a version)
@@ -1068,10 +1072,10 @@ ___Glacier Storage Classes___
     * Millisecond retrival, great for data accessed once a quarter
     * Minimum storage duration of 90 days
 * S3 Glacier Flexible retrival (formerly Amazon S3 glacier)
-    * Expedited (1 to 5 minutes), standar (3 to 5 hours), Bulkd (5 to 12 hours) - free
+    * Expedited (1 to 5 minutes), standard (3 to 5 hours), Bulked (5 to 12 hours) - free
     * Minimum storage duration of 90 days
 * S3 Glacier Deep archive
-    * Standar (12 hours), Bulk (48) Hours, meant for long term storage
+    * Standard (12 hours), Bulk (48) Hours, meant for long term storage
 
 ___Intelligent-Tiering___
 
@@ -1275,7 +1279,7 @@ ___Server-side Encryption with Amazon KMS in AWS KMS (SSE-KMS)___
 Limitations:
 
 * May impact the KMS limits
-* When uploading objects it calls GenerateDataKey KMS API
+* When uploading objects it calls GenerateDataKey KMS API -> kms:GenerateDataKey
 * When dowloading calls decrypt KMS API
 * Counts towards the KMS quota per second
 * Can increase quota using Service Quotas Console
@@ -1344,6 +1348,8 @@ ___VPC Origin___
 * Only one S3 bucket is needed on top of we create S3 Access point and S3 Object Lambda Access.
 
 S3 --> S3 object lambda (convert data) --> response
+
+* S3 Object Ownership is an Amazon S3 bucket setting that you can use to control ownership of new objects that are uploaded to your buckets
 
 
 # ~~~~ AWS Cloud Front ~~~~
@@ -1470,6 +1476,8 @@ S3 Pre-Signed URL
 * EC2 LaunchType -> you must provision & maintain the infrastructure (the EC2 instances)
 * Each EC2 instance must run the ECS agent to register in the ECS cluster
 * AWS takes care of starting/stopping containers
+* Terminating a container instance in STOPPED state can lead to sync issues, need to be manually deregistered
+* Terminating a container instance in RUNNING state will automatically manual deregister the instance
 
 **ECS - Fargate Launch Type**
 
@@ -1727,8 +1735,8 @@ It works behind SQS queues, once a message is under a SQS queue, workers process
 * Rolling - update a few instances at a time, and then move onto the next bucket once the first bucket is healthy
 * Rolling with additional batches - same as rolling but spins up new instances to move the batch (old application still available)
 * Immutable - spins up new instances in a new ASG, deploys version to these instances, and then swaps all the instances when everything is healthy
-* Blue green - create a new environment and switch over when ready
-* Traffic splitting - canary testing, sends a small % of traffic to the new deployment
+* Blue green - create a new environment, new load balancer and switch over when ready
+* Traffic splitting - canary testing, sends a small % of traffic to the new deployment, spins up new instances
 
 * Single instances -> good for dev, test
 * High Availability with Load Balancer -> good for prod
@@ -2011,6 +2019,7 @@ ___Cross Stack Reference___
 * A consumer could call the ChangeMessageVisibility API to get more time
 * If visibility timeout is high and consumer crashes, re-processing will take time
 * If visibility timeout is too low we may get duplicates
+* If ApproximateNumberOfMessagesVisible is high, we can set metric to scale up the Instance reading from the queue
 
 **Amazon SQS Dead letter queue DLQ**
 
@@ -2062,6 +2071,7 @@ ___Cross Stack Reference___
 
 **Amazon SQS FIFO Queue**
 
+* Cannot change the Queue type once it is created
 * FIFO = First In First Out
 * Limited throughput: 300 msg/s without batching, 3000 msg/s with batching
 * Exactly-once send capability, removing duplicates
@@ -2361,7 +2371,7 @@ Read from
 
     * EC2 instance metrics have metrics every 5 minutes
     * With detailed monitoring you can get data every 1 minute (for a cost)
-    * Use datailed monitoring if you want tos cale faster for your ASG
+    * Use datailed monitoring if you want to scale faster for your ASG
     * AWS free tier allos us to have 10 detailed monitoring metrics
     * EC2 memory usage is by default not pushed (must be pushed from inside the instance as a custom metric)
 
@@ -3329,7 +3339,6 @@ ___Scan (entire table)___
     * Delete individual item
     * Ability to perform a conditional Delete
 * DeleteTable
-    * 
 
 **DynamoDB batch operations**
 
@@ -3370,7 +3379,7 @@ ___Scan (entire table)___
 
 Local secondary index
 
-* Alternative sort key for the table (same Partitiok key as the base table)
+* Alternative sort key for the table (same Partition key as the base table)
 * The sort key consists of one scalar attribute (String, Number or Binary)
 * Up to 5 local secondary indexes per table
 * Must be defined at table creation time
@@ -3888,6 +3897,14 @@ ___Buildspec.yaml___
 * Gradual deployment control
 * A file named appspec.yml defines how the deployment happens
 
+___Hook Order___
+
+1. Application Stop
+2. Before Install
+3. After Install
+4. Application start
+5. Validate service
+
 ___EC2/On premises platform___
 
 * Can deploy to EC2 instances & on premises servers
@@ -4039,6 +4056,7 @@ ___Agent Configuration___
 * Supports anything from CloudFormation, Outputs, Mappings, Paramenters, Resources
 * Only two commands to deploy to AWS
 * SAM can use CodeDeploy to deploy lambda function
+* Presence of Transform: 'AWS::Serverless-2016-10-31' indicates it is a SAM template
 
 Step to follow:
 1. Build the application locally, sam build (SAM template + application code) -> tranform into CloudFormaton template
@@ -4559,6 +4577,81 @@ ___Granting a User permissions to pass a role to an AWS service___
 * Simple AD
     * AD-compatible managed directory on AWS
     * Cannot be joined with on-premise AD
+
+# ~~~~ AWS Security & Encryption KMS, SDK, SSM ~~~~
+
+There are multiple encryption patterns
+
+* Encryption in flight (TLS/SSL)
+    * Data is encrypted before sendin and decrypted after receiving
+    * TLS certificates help with encryption (HTTPS)
+    * Encryption in flight ensures no MITM (man in the middle attack) can happen
+* Encryption at rest (Server side)
+    * Data is encrypted after being received by the server
+    * Dta is decrypted before being sent
+    * It is stored in an encrypted form thanks to a key (usually a data key)
+    * The encryption / decryption keys must be managed somewhere, and the server must have access to it
+* Client side encryption
+    * Data is encrypted by the client and never decrypted by the server
+    * Data will be decrypted by a receiving client
+    * The server should not be able to decrypt the data
+    * Could leverage Envelope Encryption
+
+**AWS KMS - Service**
+
+* Anytime we hear encryption, it is most likely KMS
+* AWS manages encryption keys for us
+* Fully integrated with IAM for authorization
+* Easy way to control access to your data
+* Able to audit KMS key usage using CloudTrail
+* Seamlessly integrated into most AWS services (EBS, S3, RDS, SSM...)
+* Never ever store secrets in plaintext nor code
+
+**AWS KMS - Key types**
+
+* KMS keys is the new name of KMS Customer Master key
+* Symmetric (AES-256 Keys)
+    * Single encryption key that is used to Encrypt and Decrypt
+    * AWS services that are integrated with KMS use Symmetric CMKs
+    * You never get access to the KMS key unencrypted (must call KMS API to use)
+* Asymmetric (RSA & ECC key pairs)
+    * Public (Encrypt) and Private key (decrypt) pair
+    * Used for Encrypt/Decrypt or Sign/Verify operations
+    * The public key is downloadable, but you can't access the private key unencrypted
+    * Use case: encryption outside AWS by users who can't call the KMS API
+
+* Types of KMS keys:
+    * AWS Owned keys(free): SSE-S3, SSE-SQS, SS3-DDB (default key)
+    * AWS Managed key: free (aws/service-name, example: aws/rds or aws/ebs)
+    * Customer managed keys created in KMS: $1 / month
+    * Customer managed keys imported (must be symmetric key): $1 / month
+    * + pay for API call to KMS ($0.03 / 10000 calls)
+* Automatic key rotation:
+    * AWS-managed KMS key: automatic every 1 year
+    * Customer-managed KMS key: (must be enabled) automatic every 1 year
+    * Imported KMS key: only manual rotation possible using alias
+
+___Key policies___
+
+* Control access to KMS keys, "similar" to S3 buckets
+* Difference: cannot control access without them
+
+* Default KMS key policy:
+    * Created if you don't provide a specific KSM key policy
+    * Complete access to the key to the root user = entire AWS account
+* Custom KMS key policy: 
+    * Define users, roles that can access the KMS key
+    * Define who can administer the key
+    * Useful for cross-account access of your KMS key
+
+___Copying snapshots accross accounts___
+
+* Create a snapshot encrypted with KMS key (customer managed key)
+* Attach a KMS Key Policy to authorize cross-accouunt access
+* Share the encrypted snapshot
+* Create a copy of the snapshot, encrypt it with a CMK in your account
+* Create a volume from the snapshot
+
 
 ** _TCP is layer 4_.
 
