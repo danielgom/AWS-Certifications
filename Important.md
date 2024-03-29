@@ -170,7 +170,7 @@ Firewall that controls the traffic that is allowed into or out of EC2 instances
 * Locked down to region
 * Does live outsided the EC2 - if traffic is blocket, instance will never see it
 * Maintain one security group for SSH access
-* If application is not accessible (time out), it's a security group issue
+* If application is not accessible (timeout), it's a security group issue
 * If application gives connection refused error, it's an application error or it's not launched
 
 
@@ -271,16 +271,6 @@ Firewall that controls the traffic that is allowed into or out of EC2 instances
 
     Instances running on hardware that's dedicated to you
 
-    May share hardware with other instances in same account
-
-    No control over instance placement (can move hardware after Stop / Start)
-
-* EC2 Dedicated instances
-
-    Just like a soft version of dedicated hosts with a Per-Instance billing.
-
-    Instances running on hardware that's dedicated to you
-    
     May share hardware with other instances in same account
 
     No control over instance placement (can move hardware after Stop / Start)
@@ -555,6 +545,7 @@ ASG are free, you only pay for the EC2 instances that may be created.
 * Re-create an EC2 instance in case of a previous one is terminated
 * Can contain EC2 instances in multiple AZ of a region
 * AGS that span across multiple regions need to be enabled for all the regions specified
+* Works with Network and application load balancers
 
     ___Auto scaling group attributes___
 
@@ -613,6 +604,7 @@ Good metrics to scale on.
 RDS is a managed service:
 * Automated provisioning, OS patching
 * Continuous backups and restore to specific timestamp (Point in time restore)
+* Automated backups are limited to single AWS Region
 * Read replicas for improved read performance
 * Multi AZ setup for DR (Distaster recovery)
 * Maintenance windows for updates
@@ -1259,7 +1251,7 @@ You can encrypt objets in S3 buckets using one of 4 methods:
         * Leverage AWS key management services to manage encryption keys
     * Server-side Encryption with Customer provided keys (SSE-C)
         * When you want to manage your own encryption keys
-* Client-Seide Encryption
+* Client-Side Encryption
 
 ___Server-Side Encryption with Amazon S3-Managed-Keys (SSE-S3)___
 
@@ -1489,6 +1481,8 @@ S3 Pre-Signed URL
 * To scale, just increase the number of tasks
 
 **ECS - IAM roles for ECS**
+
+* Config "ECS_ENABLE_TASK_IAM_ROLE" should be enabled in order to use IAM Roles
 
 * EC2 instance profile (EC2 Launch Type only)
     * Used by the ECS agent
@@ -1735,7 +1729,7 @@ It works behind SQS queues, once a message is under a SQS queue, workers process
 * Rolling - update a few instances at a time, and then move onto the next bucket once the first bucket is healthy
 * Rolling with additional batches - same as rolling but spins up new instances to move the batch (old application still available)
 * Immutable - spins up new instances in a new ASG, deploys version to these instances, and then swaps all the instances when everything is healthy
-* Blue green - create a new environment, new load balancer and switch over when ready
+* Blue green - create a new environment, new load balancer and switch over when ready, spins up new instances
 * Traffic splitting - canary testing, sends a small % of traffic to the new deployment, spins up new instances
 
 * Single instances -> good for dev, test
@@ -1893,7 +1887,7 @@ ___Cross Stack Reference___
 * For this we use the Fn::ImportValue function
 * You can't delete the underlying stack until all the references are deleted too.
 
-**CloudFormation Conditions**
+E**CloudFormation Conditions**
 
 * Conditions are used to control the creation of resources or outputs based on a condition
 * Conditions can be wathever you want to be
@@ -2001,7 +1995,7 @@ ___Cross Stack Reference___
 
 * Encryption:
     * In-flight encryption using HTTPS API
-    * At rest encryption using KMS keys
+    * At rest encryption using KMS keys, needs to be enabled
     * Client-side encryption if the client wants to perform encryption/decryption itself
 * Access Controls: IAM policies to regulate access to the SQS API
 * SQS access policies
@@ -3332,6 +3326,7 @@ ___Scan (entire table)___
     * Limit the impact of parallel scans just like scans
 
 * Can use ProjectionExpression and FilterExpression (no changes to RCU)
+* FilterExpression is applied after Scan is finished(not really good for performance improvements)
 
 **DynamoDB delete data**
 
@@ -3729,7 +3724,7 @@ ___Correct Order for API keys___
     * Can override settings on a per API basis
 * X-Ray
     * Enable tracing to get extra information about requests in API gateway
-    * X-Ray API Gateway + AWS Lambda gives ful picture
+    * X-Ray API Gateway + AWS Lambda gives full picture
 
 ___Cloudwatch metrics___
 
@@ -3895,15 +3890,17 @@ ___Buildspec.yaml___
 * Deploy new application versions to EC2 instances, On-premises servers, Lambda functions, ECS services
 * Automated rollback capability in case of failed deployments or trigger CloudWatch Alarm
 * Gradual deployment control
-* A file named appspec.yml defines how the deployment happens
+* A file named appspec.yml in the root directory defines how the deployment happens
 
 ___Hook Order___
 
 1. Application Stop
-2. Before Install
-3. After Install
-4. Application start
-5. Validate service
+2. Download Bundle
+3. Before Install
+4. Install
+5. After Install
+6. Application start
+7. Validate service
 
 ___EC2/On premises platform___
 
@@ -4116,6 +4113,7 @@ ___PolicyTemplates___
     * sam deploy: deploy to CloudFormation
 * SAM policy templates for easy IAM policy definition
 * SAM is integrated with CodeDeploy to do deploy to lambda aliases
+* SAM can invoke lambdas by using sam local invoke function
 
 
 # ~~~~ AWS  Cloud Development Kit ~~~~
@@ -4136,12 +4134,12 @@ ___CDK VS SAM___
     * Leverages CloudFormation
 * CDK
     * All AWS Services****
-    * Write infra in a programming language JS/TS, Pythin, Java and .NET
-    * Leverages cloud formation
+    * Write infra in a programming language JS/TS, Python, Java and .NET
+    * Leverages CloudFormation
 
 **CDK - Constructs**
 
-* CKD Construct is a component that encapsulates everything CDK needs to create the final CloudFormation stack
+* CKD Construct is a component that encapsulates everything, CDK needs to create the final CloudFormation stack
 * Can represent a single AWS resource (e.g. S3 Bucket) or multiple related resources
 * AWS Construct library
     * A collection of Constructs included in AWS CDK which contains Constructs for every AWS resource
@@ -4606,6 +4604,7 @@ There are multiple encryption patterns
 * Able to audit KMS key usage using CloudTrail
 * Seamlessly integrated into most AWS services (EBS, S3, RDS, SSM...)
 * Never ever store secrets in plaintext nor code
+* Max data size is 4KB
 
 **AWS KMS - Key types**
 
